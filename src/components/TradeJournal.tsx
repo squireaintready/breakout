@@ -9,7 +9,6 @@ export default function TradeJournal() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState('');
   const [editExit, setEditExit] = useState('');
-  const [showFavPanel, setShowFavPanel] = useState(false);
 
   const filtered = useMemo(() => {
     let t = [...trades].reverse();
@@ -20,8 +19,6 @@ export default function TradeJournal() {
     if (assetFilter) t = t.filter(x => x.asset === assetFilter);
     return t;
   }, [trades, filter, assetFilter, starOnly]);
-
-  const starred = useMemo(() => trades.filter(t => t.starred).reverse(), [trades]);
 
   const stats = useMemo(() => {
     if (trades.length === 0) return null;
@@ -110,22 +107,7 @@ export default function TradeJournal() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-bold">Trade Journal</h2>
-        {starred.length > 0 && (
-          <button onClick={() => setShowFavPanel(!showFavPanel)}
-            className={`text-sm px-3 py-1 rounded ${showFavPanel ? 'bg-yellow-600 text-white' : 'bg-slate-700 text-yellow-400'}`}>
-            ★ Favorites ({starred.length})
-          </button>
-        )}
-      </div>
-
-      {showFavPanel && starred.length > 0 && (
-        <div className="bg-slate-900 border border-yellow-600/30 rounded-xl p-4 space-y-2">
-          <h3 className="text-sm font-bold text-yellow-400">★ Favorites</h3>
-          {starred.map(trade => renderTradeCard(trade, true))}
-        </div>
-      )}
+      <h2 className="text-lg font-bold">Trade Journal</h2>
 
       {stats && (
         <div className="bg-slate-800 rounded-xl p-4 grid grid-cols-3 sm:grid-cols-4 gap-3 text-sm">
@@ -144,7 +126,7 @@ export default function TradeJournal() {
 
       <div className="flex gap-2 flex-wrap items-center">
         {(['all', 'win', 'loss', 'favorites'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)}
+          <button key={f} onClick={() => setFilter(filter === f && f !== 'all' ? 'all' : f)}
             className={`px-3 py-1 rounded text-sm ${filter === f ? (f === 'favorites' ? 'bg-yellow-600 text-white' : 'bg-blue-600 text-white') : 'bg-slate-700 text-slate-400'}`}>
             {f === 'all' ? 'All' : f === 'win' ? 'Wins' : f === 'loss' ? 'Losses' : '★ Favorites'}
           </button>
