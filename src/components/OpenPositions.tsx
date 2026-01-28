@@ -127,9 +127,9 @@ export default function OpenPositions({ prices }: Props) {
             <tr className="text-slate-400 text-left border-b border-slate-700">
               <th className="pb-2 pr-3 font-medium">Symbol</th>
               <th className="pb-2 pr-3 font-medium">Side</th>
-              <th className="pb-2 pr-3 font-medium text-right">Lot Size</th>
               <th className="pb-2 pr-3 font-medium text-right">Total Value</th>
               <th className="pb-2 pr-3 font-medium text-right">% Acct</th>
+              <th className="pb-2 pr-3 font-medium text-right">Lot Size</th>
               <th className="pb-2 pr-3 font-medium text-right">Fill Price</th>
               <th className="pb-2 pr-3 font-medium text-right">Stop Loss</th>
               <th className="pb-2 pr-3 font-medium text-right">Take Profit</th>
@@ -159,9 +159,9 @@ export default function OpenPositions({ prices }: Props) {
                     {pos.side === 'long' ? 'Buy' : 'Sell'}
                   </span>
                 </td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-400">{acctPct.toFixed(1)}%</td>
+                <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtPrice(pos.entryPrice)}</td>
 
                 {/* Stop Loss - click to edit */}
