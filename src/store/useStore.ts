@@ -27,6 +27,7 @@ export interface Trade {
   tags: string[];
   openedAt: number;
   closedAt: number;
+  starred?: boolean;
 }
 
 export interface EquitySnapshot {
@@ -100,7 +101,7 @@ export interface StoreState {
   addEquitySnapshot: () => void;
   importData: (data: Partial<StoreState>) => void;
   resetAccount: () => void;
-  editTrade: (id: string, updates: Partial<Pick<Trade, 'notes' | 'tags' | 'fees'>>) => void;
+  editTrade: (id: string, updates: Partial<Pick<Trade, 'notes' | 'tags' | 'fees' | 'exitPrice' | 'starred'>>) => void;
   deleteTrade: (id: string) => void;
   deletePosition: (id: string) => void;
   addPriceAlert: (alert: Omit<PriceAlert, 'id' | 'triggered' | 'createdAt'>) => void;
@@ -272,9 +273,28 @@ export const useStore = create<StoreState>()(
       },
 
       editTrade: (id, updates) => {
-        set(state => ({
-          trades: state.trades.map(t => t.id === id ? { ...t, ...updates } : t),
-        }));
+        const state = get();
+        const trade = state.trades.find(t => t.id === id);
+        if (!trade) return;
+
+        if (updates.exitPrice !== undefined && updates.exitPrice !== trade.exitPrice) {
+          const direction = trade.side === 'long' ? 1 : -1;
+          const priceDiff = (updates.exitPrice - trade.entryPrice) * direction;
+          const rawPnl = (priceDiff / trade.entryPrice) * trade.size;
+          const exitFee = trade.size * (state.settings.tradingFeePct / 100);
+          const newPnl = rawPnl - exitFee;
+          const pnlDiff = newPnl - trade.pnl;
+
+          set({
+            trades: state.trades.map(t => t.id === id ? { ...t, ...updates, pnl: newPnl } : t),
+            balance: state.balance + pnlDiff,
+            realizedPnl: state.realizedPnl + pnlDiff,
+          });
+        } else {
+          set({
+            trades: state.trades.map(t => t.id === id ? { ...t, ...updates } : t),
+          });
+        }
         debouncedPush(() => get().pushCloud());
       },
 
