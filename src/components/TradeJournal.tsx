@@ -59,9 +59,14 @@ export default function TradeJournal() {
             {trade.side.toUpperCase()}
           </span>
         </div>
-        <span className={`font-mono font-bold ${trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
-        </span>
+        <div className="text-right">
+          <div className={`font-mono font-bold ${trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
+          </div>
+          <div className={`font-mono text-xs ${trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {trade.pnl >= 0 ? '+' : ''}{((trade.pnl / trade.size) * 100).toFixed(2)}%
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-3 gap-1 text-xs text-slate-400 mt-1">
         <div>Entry: <span className="font-mono text-slate-300">${trade.entryPrice.toLocaleString()}</span></div>
