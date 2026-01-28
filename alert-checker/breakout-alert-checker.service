@@ -1,0 +1,16 @@
+[Unit]
+Description=Breakout Alert Checker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/breakout/alert-checker
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/breakout/alert-checker/.env
+
+[Install]
+WantedBy=multi-user.target
