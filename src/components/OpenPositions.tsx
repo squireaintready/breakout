@@ -46,7 +46,7 @@ export default function OpenPositions({ prices }: Props) {
     const leverage = pos.size / balance;
     const maxLev = BTC_ETH_ASSETS.includes(pos.asset) ? settings.btcEthLeverage : settings.altLeverage;
     const sizeQty = pos.size / pos.entryPrice;
-    const acctPct = balance > 0 ? (pos.size / balance) * 100 : 0;
+    const acctPct = balance > 0 ? (pos.size / balance / 2) * 100 : 0;
 
     const riskAmt = pos.stopLoss
       ? (Math.abs(pos.entryPrice - pos.stopLoss) / pos.entryPrice) * pos.size
@@ -127,7 +127,8 @@ export default function OpenPositions({ prices }: Props) {
             <tr className="text-slate-400 text-left border-b border-slate-700">
               <th className="pb-2 pr-3 font-medium">Symbol</th>
               <th className="pb-2 pr-3 font-medium">Side</th>
-              <th className="pb-2 pr-3 font-medium text-right">Size</th>
+              <th className="pb-2 pr-3 font-medium text-right">Lot Size</th>
+              <th className="pb-2 pr-3 font-medium text-right">Total Value</th>
               <th className="pb-2 pr-3 font-medium text-right">% Acct</th>
               <th className="pb-2 pr-3 font-medium text-right">Fill Price</th>
               <th className="pb-2 pr-3 font-medium text-right">Stop Loss</th>
@@ -159,6 +160,7 @@ export default function OpenPositions({ prices }: Props) {
                   </span>
                 </td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
+                <td className="py-2 pr-3 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-400">{acctPct.toFixed(1)}%</td>
                 <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtPrice(pos.entryPrice)}</td>
 
@@ -223,10 +225,18 @@ export default function OpenPositions({ prices }: Props) {
                     <div className="flex items-center gap-1 justify-end">
                       <input type="number" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
                         placeholder={`${currentPrice}`} autoFocus step={priceStep(exitPrice)}
-                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono" />
+                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleClose(pos.id);
+                          if (e.key === 'Escape') setClosingId(null);
+                        }} />
                       <input type="text" value={closeNotes} onChange={e => setCloseNotes(e.target.value)}
                         placeholder="Notes"
-                        className="w-16 bg-slate-700 rounded px-1 py-0.5 text-xs" />
+                        className="w-16 bg-slate-700 rounded px-1 py-0.5 text-xs"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleClose(pos.id);
+                          if (e.key === 'Escape') setClosingId(null);
+                        }} />
                       <button onClick={() => handleClose(pos.id)}
                         className="px-1.5 py-0.5 bg-red-600 text-white rounded text-xs">OK</button>
                       <button onClick={() => setClosingId(null)}
