@@ -33,7 +33,7 @@ export default function TradeJournal() {
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
     const totalFees = trades.reduce((s, t) => s + t.fees, 0);
     const netPnl = trades.reduce((s, t) => s + t.pnl, 0);
-    return { winRate, avgWin, avgLoss, avgRR, profitFactor, total: trades.length, totalWins: wins.length, totalLosses: losses.length, netPnl, totalFees };
+    return { winRate, avgWin, avgLoss, avgRR, profitFactor, total: trades.length, totalWins: wins.length, totalLosses: losses.length, grossProfit, grossLoss, netPnl, totalFees };
   }, [trades]);
 
   const uniqueAssets = [...new Set(trades.map(t => t.asset))];
@@ -112,8 +112,8 @@ export default function TradeJournal() {
       {stats && (
         <div className="bg-slate-800 rounded-xl p-4 grid grid-cols-3 sm:grid-cols-4 gap-3 text-sm">
           <div><div className="text-slate-400 text-xs">Trades</div><div className="font-mono font-bold">{stats.total}</div></div>
-          <div><div className="text-slate-400 text-xs">Total Wins</div><div className="font-mono text-green-400">{stats.totalWins}</div></div>
-          <div><div className="text-slate-400 text-xs">Total Losses</div><div className="font-mono text-red-400">{stats.totalLosses}</div></div>
+          <div><div className="text-slate-400 text-xs">Total Wins</div><div className="font-mono text-green-400">{stats.totalWins} <span className="text-xs">(${stats.grossProfit.toFixed(2)})</span></div></div>
+          <div><div className="text-slate-400 text-xs">Total Losses</div><div className="font-mono text-red-400">{stats.totalLosses} <span className="text-xs">(-${stats.grossLoss.toFixed(2)})</span></div></div>
           <div><div className="text-slate-400 text-xs">Net P&L</div><div className={`font-mono font-bold ${stats.netPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>{stats.netPnl >= 0 ? '+' : ''}${stats.netPnl.toFixed(2)}</div></div>
           <div><div className="text-slate-400 text-xs">Win Rate</div><div className="font-mono font-bold">{stats.winRate.toFixed(1)}%</div></div>
           <div><div className="text-slate-400 text-xs">Avg R:R</div><div className="font-mono font-bold">{stats.avgRR.toFixed(2)}</div></div>
