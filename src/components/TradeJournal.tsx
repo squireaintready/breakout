@@ -69,7 +69,8 @@ export default function TradeJournal() {
       <div className="grid grid-cols-3 gap-1 text-xs text-slate-400 mt-1">
         <div>Entry: <span className="font-mono text-slate-300">${trade.entryPrice.toLocaleString()}</span></div>
         <div>Exit: <span className="font-mono text-slate-300">${trade.exitPrice.toLocaleString()}</span></div>
-        <div>Size: <span className="font-mono text-slate-300">${trade.size.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({(trade.size / balance * 100).toFixed(1)}%)</span></div>
+        <div>Amount: <span className="font-mono text-slate-300">${trade.size.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({(trade.size / balance * 100).toFixed(1)}%)</span></div>
+        <div>Lot Size: <span className="font-mono text-slate-300">{(trade.size / trade.entryPrice).toFixed(4)}</span></div>
         <div>Fees: <span className="font-mono text-orange-400">${trade.fees.toFixed(2)}</span></div>
         <div className="col-span-2">{new Date(trade.closedAt).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}</div>
       </div>
