@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useStore } from '../store/useStore';
 
 export default function TradeJournal() {
-  const { trades, editTrade, deleteTrade, balance } = useStore();
+  const { trades, editTrade, deleteTrade } = useStore();
   const [filter, setFilter] = useState<'all' | 'win' | 'loss' | 'favorites'>('all');
   const [assetFilter, setAssetFilter] = useState('');
   const [starOnly, setStarOnly] = useState(false);
