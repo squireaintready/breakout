@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import type { PriceAlert, PnlAlert } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
@@ -50,9 +50,6 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const [, setTick] = useState(0);
 
   // Auto-dismiss triggered alerts after 60s
-  const prevTriggeredRef = useRef<Set<string>>(new Set());
-  const prevPnlTriggeredRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
