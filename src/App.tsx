@@ -107,7 +107,7 @@ export default function App() {
               + Manual Entry
             </button>
           </div>
-          <Dashboard prices={prices} />
+          <Dashboard prices={prices} onAddPosition={() => setShowTradeForm(true)} />
         </>
       )}
       {tab === 'drawdown' && <DrawdownTracker />}

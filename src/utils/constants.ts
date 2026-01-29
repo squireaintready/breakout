@@ -19,6 +19,11 @@ export const SUPPORTED_ASSETS = [
   'ARB', 'OP', 'SUI', 'SEI', 'TIA', 'INJ', 'FET', 'RNDR',
   'ASTR', 'HYPE', 'TRUMP', 'TAO', 'PUMP', 'FARTCOIN', 'BCH',
   'BONK', 'AAVE', 'LDO', 'KAS', 'BNB',
+  'PEPE', 'WIF', 'FLOKI', 'SHIB', 'FIL', 'IMX', 'GRT',
+  'PENDLE', 'JUP', 'ENA', 'ONDO', 'STX', 'MKR', 'RENDER',
+  'TRX', 'TON', 'XLM', 'ALGO', 'VET', 'SAND', 'MANA', 'AXS',
+  'CRV', 'SNX', 'COMP', 'SUSHI', 'DYDX', 'BLUR', 'W', 'PYTH',
+  'JTO', 'STRK', 'MEME', 'ORDI', 'RUNE', 'WLD', 'FTM',
 ] as const;
 
 export const CORRELATION_GROUPS: string[][] = [

@@ -10,9 +10,10 @@ import type { PriceMap } from '../hooks/useKrakenPrices';
 
 interface Props {
   prices: PriceMap;
+  onAddPosition?: () => void;
 }
 
-export default function Dashboard({ prices }: Props) {
+export default function Dashboard({ prices, onAddPosition }: Props) {
   const { balance, dayStartBalance, highWaterMark, settings, positions, realizedPnl, pnlAlerts, addPnlAlert } = useStore();
   const dailyDD = calcDailyDrawdownPct(balance, dayStartBalance);
   const totalDD = calcTotalDrawdownPct(balance, highWaterMark);
@@ -118,7 +119,7 @@ export default function Dashboard({ prices }: Props) {
       </div>
 
       <PositionSizer prices={prices} />
-      <OpenPositions prices={prices} />
+      <OpenPositions prices={prices} onAddPosition={onAddPosition} />
       <PriceAlerts prices={prices} unrealizedPnl={unrealizedPnl} />
       <EquityChart />
     </div>
