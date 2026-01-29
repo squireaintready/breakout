@@ -171,7 +171,7 @@ export default function OpenPositions({ prices }: Props) {
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-right" />
+                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"
@@ -188,7 +188,7 @@ export default function OpenPositions({ prices }: Props) {
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-right" />
+                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"

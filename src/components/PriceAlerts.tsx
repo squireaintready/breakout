@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
+import type { PriceAlert, PnlAlert } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
 import AssetPicker from './AssetPicker';
 import { priceStep } from '../utils/priceStep';
@@ -40,13 +41,43 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const [rearmPnlDir, setRearmPnlDir] = useState<'above' | 'below'>('above');
   const [confirmPnlClear, setConfirmPnlClear] = useState(false);
   const [pnlSort, setPnlSort] = useState<'date' | 'dist' | 'amount'>('date');
+  const [persistent, setPersistent] = useState(false);
+  const [pnlPersistent, setPnlPersistent] = useState(false);
+  const [editPersistent, setEditPersistent] = useState(false);
+  const [editPnlPersistent, setEditPnlPersistent] = useState(false);
+  const [recentAlerts, setRecentAlerts] = useState<PriceAlert[]>([]);
+  const [recentPnlAlerts, setRecentPnlAlerts] = useState<PnlAlert[]>([]);
+  const [, setTick] = useState(0);
+
+  // Auto-dismiss triggered alerts after 60s
+  const prevTriggeredRef = useRef<Set<string>>(new Set());
+  const prevPnlTriggeredRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const expired = priceAlerts.filter(a => a.triggered && !a.persistent && a.triggeredAt && now - a.triggeredAt > 60000);
+      const expiredPnl = pnlAlerts.filter(a => a.triggered && !a.persistent && a.triggeredAt && now - a.triggeredAt > 60000);
+      if (expired.length > 0) {
+        setRecentAlerts(prev => [...expired, ...prev].slice(0, 5));
+        expired.forEach(a => dismissAlert(a.id));
+      }
+      if (expiredPnl.length > 0) {
+        setRecentPnlAlerts(prev => [...expiredPnl, ...prev].slice(0, 5));
+        expiredPnl.forEach(a => dismissPnlAlert(a.id));
+      }
+      setTick(t => t + 1);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [priceAlerts, pnlAlerts, dismissAlert, dismissPnlAlert]);
 
   const handleAddPnl = () => {
     const val = parseFloat(pnlTarget);
     if (isNaN(val)) return;
-    addPnlAlert({ targetPnl: val, direction: pnlDir, note: pnlNote });
+    addPnlAlert({ targetPnl: val, direction: pnlDir, note: pnlNote, persistent: pnlPersistent });
     setPnlTarget('');
     setPnlNote('');
+    setPnlPersistent(false);
     setShowPnlForm(false);
   };
 
@@ -68,9 +99,10 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const handleAdd = () => {
     const price = parseFloat(targetPrice);
     if (!asset || !price || price <= 0) return;
-    addPriceAlert({ asset, targetPrice: price, direction, note });
+    addPriceAlert({ asset, targetPrice: price, direction, note, persistent });
     setTargetPrice('');
     setNote('');
+    setPersistent(false);
     setShowForm(false);
   };
 
@@ -155,6 +187,11 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                 placeholder="Optional"
                 className="bg-slate-700 rounded px-2 py-1.5 text-xs w-24" />
             </div>
+            <button onClick={() => setPersistent(p => !p)}
+              className={`px-2 py-1.5 rounded text-xs font-bold ${persistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-300'}`}
+              title="Persistent: stays active after firing">
+              {persistent ? '∞ On' : '∞'}
+            </button>
             <button onClick={handleAdd}
               className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-500">
               Add
@@ -221,6 +258,31 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
         </div>
       )}
 
+      {/* Recent (auto-dismissed) alerts */}
+      {recentAlerts.length > 0 && (
+        <div className="space-y-1 mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wide">Recent</div>
+            <button onClick={() => setRecentAlerts([])}
+              className="text-[10px] text-slate-600 hover:text-slate-400">Clear</button>
+          </div>
+          {recentAlerts.map(a => (
+            <div key={a.id} className="flex items-center justify-between bg-slate-900/50 rounded px-3 py-1.5 cursor-pointer opacity-60 hover:opacity-100"
+              onClick={() => {
+                addPriceAlert({ asset: a.asset, targetPrice: a.targetPrice, direction: a.direction, note: a.note, persistent: a.persistent });
+                setRecentAlerts(prev => prev.filter(r => r.id !== a.id));
+              }}>
+              <div className="flex items-center gap-3 text-xs min-w-0">
+                <span className="font-bold text-slate-400 w-12 shrink-0">{a.asset}</span>
+                <span className="text-slate-500 font-mono shrink-0">{a.direction === 'above' ? '↑' : '↓'} ${a.targetPrice.toLocaleString()}</span>
+                {a.note && <span className="text-slate-600 truncate">{a.note}</span>}
+              </div>
+              <span className="text-[10px] text-slate-600 shrink-0 ml-2">click to re-add</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Active alerts */}
       {active.length > 0 ? (
         <div className="space-y-1">
@@ -245,16 +307,20 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                 <input type="text" value={editNote} onChange={e => setEditNote(e.target.value)}
                   placeholder="Note"
                   className="w-20 bg-slate-700 rounded px-1.5 py-0.5 text-xs" />
-                <button onClick={() => { const p = parseFloat(editPrice); if (p > 0) { editPriceAlert(a.id, { targetPrice: p, direction: editDir, note: editNote }); setEditingId(null); } }}
+                <button onClick={() => setEditPersistent(p => !p)}
+                  className={`px-1.5 py-0.5 rounded text-xs font-bold ${editPersistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                  title="Persistent">∞</button>
+                <button onClick={() => { const p = parseFloat(editPrice); if (p > 0) { editPriceAlert(a.id, { targetPrice: p, direction: editDir, note: editNote, persistent: editPersistent }); setEditingId(null); } }}
                   className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-xs">OK</button>
                 <button onClick={() => setEditingId(null)}
                   className="text-slate-400 hover:text-slate-200 text-xs">X</button>
               </div>
             ) : (
               <div key={a.id} className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer"
-                onClick={() => { setEditingId(a.id); setEditPrice(String(a.targetPrice)); setEditDir(a.direction); setEditNote(a.note); }}>
+                onClick={() => { setEditingId(a.id); setEditPrice(String(a.targetPrice)); setEditDir(a.direction); setEditNote(a.note); setEditPersistent(!!a.persistent); }}>
                 <div className="flex items-center gap-3 text-sm min-w-0">
                   <span className="font-bold text-slate-200 w-12 shrink-0">{a.asset}</span>
+                  {a.persistent && <span className="text-amber-400 font-bold text-xs shrink-0" title="Persistent">∞</span>}
                   <span className={`font-mono shrink-0 ${a.direction === 'above' ? 'text-green-400' : 'text-red-400'}`}>
                     {a.direction === 'above' ? '↑' : '↓'} ${a.targetPrice.toLocaleString()}
                   </span>
@@ -330,6 +396,11 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                   placeholder="Optional"
                   className="bg-slate-700 rounded px-2 py-1.5 text-xs w-24" />
               </div>
+              <button onClick={() => setPnlPersistent(p => !p)}
+                className={`px-2 py-1.5 rounded text-xs font-bold ${pnlPersistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-300'}`}
+                title="Persistent: stays active after firing">
+                {pnlPersistent ? '∞ On' : '∞'}
+              </button>
               <button onClick={handleAddPnl}
                 className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-500">
                 Add
@@ -395,6 +466,31 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
           </div>
         )}
 
+        {/* Recent (auto-dismissed) P&L alerts */}
+        {recentPnlAlerts.length > 0 && (
+          <div className="space-y-1 mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wide">Recent</div>
+              <button onClick={() => setRecentPnlAlerts([])}
+                className="text-[10px] text-slate-600 hover:text-slate-400">Clear</button>
+            </div>
+            {recentPnlAlerts.map(a => (
+              <div key={a.id} className="flex items-center justify-between bg-slate-900/50 rounded px-3 py-1.5 cursor-pointer opacity-60 hover:opacity-100"
+                onClick={() => {
+                  addPnlAlert({ targetPnl: a.targetPnl, direction: a.direction, note: a.note, persistent: a.persistent });
+                  setRecentPnlAlerts(prev => prev.filter(r => r.id !== a.id));
+                }}>
+                <div className="flex items-center gap-3 text-xs min-w-0">
+                  <span className="font-bold text-slate-400 shrink-0">P&L</span>
+                  <span className="text-slate-500 font-mono shrink-0">{a.direction === 'above' ? '↑' : '↓'} ${a.targetPnl}</span>
+                  {a.note && <span className="text-slate-600 truncate">{a.note}</span>}
+                </div>
+                <span className="text-[10px] text-slate-600 shrink-0 ml-2">click to re-add</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Active P&L alerts */}
         {activePnl.length > 0 ? (
           <div className="space-y-1">
@@ -415,16 +511,20 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                     }} />
                   <input type="text" value={editPnlNote} onChange={e => setEditPnlNote(e.target.value)}
                     placeholder="Note" className="w-20 bg-slate-700 rounded px-1.5 py-0.5 text-xs" />
-                  <button onClick={() => { const v = parseFloat(editPnlTarget); if (!isNaN(v)) { editPnlAlert(a.id, { targetPnl: v, direction: editPnlDir, note: editPnlNote }); setEditingPnlId(null); } }}
+                  <button onClick={() => setEditPnlPersistent(p => !p)}
+                    className={`px-1.5 py-0.5 rounded text-xs font-bold ${editPnlPersistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                    title="Persistent">∞</button>
+                  <button onClick={() => { const v = parseFloat(editPnlTarget); if (!isNaN(v)) { editPnlAlert(a.id, { targetPnl: v, direction: editPnlDir, note: editPnlNote, persistent: editPnlPersistent }); setEditingPnlId(null); } }}
                     className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-xs">OK</button>
                   <button onClick={() => setEditingPnlId(null)}
                     className="text-slate-400 hover:text-slate-200 text-xs">X</button>
                 </div>
               ) : (
                 <div key={a.id} className="flex items-center justify-between bg-slate-900 rounded px-3 py-2 cursor-pointer"
-                  onClick={() => { setEditingPnlId(a.id); setEditPnlTarget(String(a.targetPnl)); setEditPnlDir(a.direction); setEditPnlNote(a.note); }}>
+                  onClick={() => { setEditingPnlId(a.id); setEditPnlTarget(String(a.targetPnl)); setEditPnlDir(a.direction); setEditPnlNote(a.note); setEditPnlPersistent(!!a.persistent); }}>
                   <div className="flex items-center gap-3 text-sm">
                     <span className="font-bold text-slate-200">P&L</span>
+                    {a.persistent && <span className="text-amber-400 font-bold text-xs" title="Persistent">∞</span>}
                     <span className={`font-mono ${a.direction === 'above' ? 'text-green-400' : 'text-red-400'}`}>
                       {a.direction === 'above' ? '↑' : '↓'} ${a.targetPnl}
                     </span>

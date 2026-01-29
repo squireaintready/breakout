@@ -63,9 +63,12 @@ function notify(title: string, body: string, positionInfo: string = '', meta: { 
   sendTelegram(`<b>${title}</b>\n${body}${timeInfo}${positionInfo}`);
 }
 
+const COOLDOWN_MS = 30_000;
+
 export function usePriceAlerts(prices: PriceMap) {
   const { priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert } = useStore();
   const firedRef = useRef<Set<string>>(new Set());
+  const cooldownRef = useRef<Map<string, number>>(new Map());
   const mountTime = useRef(Date.now());
 
   // Request notification permission on mount
@@ -92,8 +95,13 @@ export function usePriceAlerts(prices: PriceMap) {
 
       const hit = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
       if (hit) {
-        firedRef.current.add(alert.id);
-        markAlertTriggered(alert.id);
+        const lastFired = cooldownRef.current.get(alert.id) ?? 0;
+        if (Date.now() - lastFired < COOLDOWN_MS) continue;
+        cooldownRef.current.set(alert.id, Date.now());
+        if (!alert.persistent) {
+          firedRef.current.add(alert.id);
+          markAlertTriggered(alert.id);
+        }
         notify(
           `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
           `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
@@ -114,7 +122,10 @@ export function usePriceAlerts(prices: PriceMap) {
         if (!firedRef.current.has(slKey)) {
           const slHit = dir === 1 ? price <= pos.stopLoss : price >= pos.stopLoss;
           if (slHit) {
+            const lastFired = cooldownRef.current.get(slKey) ?? 0;
+            if (Date.now() - lastFired < COOLDOWN_MS) continue;
             firedRef.current.add(slKey);
+            cooldownRef.current.set(slKey, Date.now());
             notify(
               `STOP LOSS — ${pos.asset}`,
               `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
@@ -129,7 +140,10 @@ export function usePriceAlerts(prices: PriceMap) {
         if (!firedRef.current.has(tpKey)) {
           const tpHit = dir === 1 ? price >= pos.takeProfit : price <= pos.takeProfit;
           if (tpHit) {
+            const lastFired = cooldownRef.current.get(tpKey) ?? 0;
+            if (Date.now() - lastFired < COOLDOWN_MS) continue;
             firedRef.current.add(tpKey);
+            cooldownRef.current.set(tpKey, Date.now());
             notify(
               `TAKE PROFIT — ${pos.asset}`,
               `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
@@ -156,8 +170,13 @@ export function usePriceAlerts(prices: PriceMap) {
       const met = alert.direction === 'above' ? totalPnl >= alert.targetPnl : totalPnl <= alert.targetPnl;
 
       if (!alert.triggered && met && !firedRef.current.has(pnlKey)) {
-        firedRef.current.add(pnlKey);
-        markPnlAlertTriggered(alert.id);
+        const lastFired = cooldownRef.current.get(pnlKey) ?? 0;
+        if (Date.now() - lastFired < COOLDOWN_MS) continue;
+        cooldownRef.current.set(pnlKey, Date.now());
+        if (!alert.persistent) {
+          firedRef.current.add(pnlKey);
+          markPnlAlertTriggered(alert.id);
+        }
         const dir = alert.direction === 'above' ? '↑' : '↓';
         notify(
           `P&L ${dir} $${alert.targetPnl}`,
@@ -167,7 +186,7 @@ export function usePriceAlerts(prices: PriceMap) {
         );
       }
 
-      if (alert.triggered && !met) {
+      if (alert.triggered && !met && !alert.persistent) {
         resetPnlAlert(alert.id);
         firedRef.current.delete(pnlKey);
       }

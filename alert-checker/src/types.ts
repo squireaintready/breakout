@@ -16,6 +16,7 @@ export interface PriceAlert {
   direction: 'above' | 'below';
   note: string;
   triggered: boolean;
+  persistent?: boolean;
   createdAt: number;
   triggeredAt?: number;
 }
@@ -26,6 +27,7 @@ export interface PnlAlert {
   direction: 'above' | 'below';
   note: string;
   triggered: boolean;
+  persistent?: boolean;
   createdAt: number;
   triggeredAt?: number;
 }

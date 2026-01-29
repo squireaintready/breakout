@@ -27,3 +27,4 @@ body {
 }
 
 input, select, textarea, button { font-family: inherit; }
+input[type="number"], input[type="text"] { text-align: center; }

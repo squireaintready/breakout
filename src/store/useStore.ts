@@ -43,6 +43,7 @@ export interface PriceAlert {
   direction: 'above' | 'below';
   note: string;
   triggered: boolean;
+  persistent?: boolean;
   createdAt: number;
   triggeredAt?: number;
 }
@@ -53,6 +54,7 @@ export interface PnlAlert {
   direction: 'above' | 'below';
   note: string;
   triggered: boolean;
+  persistent?: boolean;
   createdAt: number;
   triggeredAt?: number;
 }
@@ -104,15 +106,15 @@ export interface StoreState {
   editTrade: (id: string, updates: Partial<Pick<Trade, 'notes' | 'tags' | 'fees' | 'exitPrice' | 'starred'>>) => void;
   deleteTrade: (id: string) => void;
   deletePosition: (id: string) => void;
-  addPriceAlert: (alert: Omit<PriceAlert, 'id' | 'triggered' | 'createdAt'>) => void;
+  addPriceAlert: (alert: Omit<PriceAlert, 'id' | 'triggered' | 'createdAt' | 'triggeredAt'>) => void;
   deletePriceAlert: (id: string) => void;
   markAlertTriggered: (id: string) => void;
-  editPriceAlert: (id: string, updates: Partial<Pick<PriceAlert, 'targetPrice' | 'direction' | 'note'>>) => void;
+  editPriceAlert: (id: string, updates: Partial<Pick<PriceAlert, 'targetPrice' | 'direction' | 'note' | 'persistent'>>) => void;
   rearmAlert: (id: string, updates: Partial<Pick<PriceAlert, 'targetPrice' | 'direction'>>) => void;
   dismissAlert: (id: string) => void;
-  addPnlAlert: (alert: Omit<PnlAlert, 'id' | 'triggered' | 'createdAt'>) => void;
+  addPnlAlert: (alert: Omit<PnlAlert, 'id' | 'triggered' | 'createdAt' | 'triggeredAt'>) => void;
   deletePnlAlert: (id: string) => void;
-  editPnlAlert: (id: string, updates: Partial<Pick<PnlAlert, 'targetPnl' | 'direction' | 'note'>>) => void;
+  editPnlAlert: (id: string, updates: Partial<Pick<PnlAlert, 'targetPnl' | 'direction' | 'note' | 'persistent'>>) => void;
   markPnlAlertTriggered: (id: string) => void;
   resetPnlAlert: (id: string) => void;
   dismissPnlAlert: (id: string) => void;

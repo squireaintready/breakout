@@ -3,6 +3,8 @@ import { sendTelegram } from './telegram.js';
 import { pushState } from './state.js';
 
 const firedSet = new Set<string>();
+const cooldownMap = new Map<string, number>();
+const COOLDOWN_MS = 30_000;
 const startTime = Date.now();
 
 function fmtTs(ts?: number): string {
@@ -67,10 +69,15 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
 
     const hit = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
     if (hit) {
-      firedSet.add(alert.id);
-      alert.triggered = true;
-      alert.triggeredAt = Date.now();
-      stateModified = true;
+      const lastFired = cooldownMap.get(alert.id) ?? 0;
+      if (Date.now() - lastFired < COOLDOWN_MS) continue;
+      cooldownMap.set(alert.id, Date.now());
+      if (!alert.persistent) {
+        firedSet.add(alert.id);
+        alert.triggered = true;
+        alert.triggeredAt = Date.now();
+        stateModified = true;
+      }
       notify(
         `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
         `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
@@ -91,7 +98,10 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
       if (!firedSet.has(slKey)) {
         const slHit = dir === 1 ? price <= pos.stopLoss : price >= pos.stopLoss;
         if (slHit) {
+          const lastFired = cooldownMap.get(slKey) ?? 0;
+          if (Date.now() - lastFired < COOLDOWN_MS) continue;
           firedSet.add(slKey);
+          cooldownMap.set(slKey, Date.now());
           notify(
             `STOP LOSS — ${pos.asset}`,
             `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
@@ -106,7 +116,10 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
       if (!firedSet.has(tpKey)) {
         const tpHit = dir === 1 ? price >= pos.takeProfit : price <= pos.takeProfit;
         if (tpHit) {
+          const lastFired = cooldownMap.get(tpKey) ?? 0;
+          if (Date.now() - lastFired < COOLDOWN_MS) continue;
           firedSet.add(tpKey);
+          cooldownMap.set(tpKey, Date.now());
           notify(
             `TAKE PROFIT — ${pos.asset}`,
             `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
@@ -136,10 +149,15 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     const met = alert.direction === 'above' ? totalPnl >= alert.targetPnl : totalPnl <= alert.targetPnl;
 
     if (!alert.triggered && met && !firedSet.has(pnlKey)) {
-      firedSet.add(pnlKey);
-      alert.triggered = true;
-      alert.triggeredAt = Date.now();
-      stateModified = true;
+      const lastFired = cooldownMap.get(pnlKey) ?? 0;
+      if (Date.now() - lastFired < COOLDOWN_MS) continue;
+      cooldownMap.set(pnlKey, Date.now());
+      if (!alert.persistent) {
+        firedSet.add(pnlKey);
+        alert.triggered = true;
+        alert.triggeredAt = Date.now();
+        stateModified = true;
+      }
       const dir = alert.direction === 'above' ? '↑' : '↓';
       notify(
         `P&L ${dir} $${alert.targetPnl}`,
@@ -149,7 +167,7 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
       );
     }
 
-    if (alert.triggered && !met) {
+    if (alert.triggered && !met && !alert.persistent) {
       alert.triggered = false;
       alert.triggeredAt = undefined;
       firedSet.delete(pnlKey);
