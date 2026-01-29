@@ -28,6 +28,8 @@ export interface Trade {
   openedAt: number;
   closedAt: number;
   starred?: boolean;
+  archived?: boolean;
+  archivedAt?: number;
 }
 
 export interface EquitySnapshot {
@@ -262,7 +264,11 @@ export const useStore = create<StoreState>()(
 
       resetAccount: () => {
         const s = get().settings;
-        const starredTrades = get().trades.filter(t => t.starred);
+        const starredTrades = get().trades.filter(t => t.starred).map(t => ({
+          ...t,
+          archived: true,
+          archivedAt: Date.now(),
+        }));
         set({
           balance: s.startingBalance,
           highWaterMark: s.startingBalance,

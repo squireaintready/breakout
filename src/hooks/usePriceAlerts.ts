@@ -63,7 +63,7 @@ function notify(title: string, body: string, positionInfo: string = '', meta: { 
   sendTelegram(`<b>${title}</b>\n${body}${timeInfo}${positionInfo}`);
 }
 
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 120_000;
 
 export function usePriceAlerts(prices: PriceMap) {
   const { priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert, closePosition } = useStore();

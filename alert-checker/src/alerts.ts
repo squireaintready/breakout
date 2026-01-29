@@ -5,7 +5,7 @@ import { pushState } from './state.js';
 const firedSet = new Set<string>();
 const cooldownMap = new Map<string, number>();
 const armedSet = new Set<string>();
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 120_000;
 const startTime = Date.now();
 
 function fmtTs(ts?: number): string {

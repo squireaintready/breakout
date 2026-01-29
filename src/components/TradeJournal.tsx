@@ -9,34 +9,38 @@ export default function TradeJournal() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState('');
   const [editExit, setEditExit] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+
+  const currentTrades = useMemo(() => trades.filter(t => !t.archived), [trades]);
+  const archivedTrades = useMemo(() => trades.filter(t => t.archived), [trades]);
 
   const filtered = useMemo(() => {
-    let t = [...trades].reverse();
+    let t = [...currentTrades].reverse();
     if (filter === 'win') t = t.filter(x => x.pnl > 0);
     if (filter === 'loss') t = t.filter(x => x.pnl <= 0);
     if (filter === 'favorites') t = t.filter(x => x.starred);
     if (starOnly) t = t.filter(x => x.starred);
     if (assetFilter) t = t.filter(x => x.asset === assetFilter);
     return t;
-  }, [trades, filter, assetFilter, starOnly]);
+  }, [currentTrades, filter, assetFilter, starOnly]);
 
   const stats = useMemo(() => {
-    if (trades.length === 0) return null;
-    const wins = trades.filter(t => t.pnl > 0);
-    const losses = trades.filter(t => t.pnl <= 0);
-    const winRate = (wins.length / trades.length) * 100;
+    if (currentTrades.length === 0) return null;
+    const wins = currentTrades.filter(t => t.pnl > 0);
+    const losses = currentTrades.filter(t => t.pnl <= 0);
+    const winRate = (wins.length / currentTrades.length) * 100;
     const avgWin = wins.length > 0 ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((s, t) => s + t.pnl, 0) / losses.length) : 0;
     const avgRR = avgLoss > 0 ? avgWin / avgLoss : 0;
     const grossProfit = wins.reduce((s, t) => s + t.pnl, 0);
     const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pnl, 0));
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
-    const totalFees = trades.reduce((s, t) => s + t.fees, 0);
-    const netPnl = trades.reduce((s, t) => s + t.pnl, 0);
-    return { winRate, avgWin, avgLoss, avgRR, profitFactor, total: trades.length, totalWins: wins.length, totalLosses: losses.length, grossProfit, grossLoss, netPnl, totalFees };
-  }, [trades]);
+    const totalFees = currentTrades.reduce((s, t) => s + t.fees, 0);
+    const netPnl = currentTrades.reduce((s, t) => s + t.pnl, 0);
+    return { winRate, avgWin, avgLoss, avgRR, profitFactor, total: currentTrades.length, totalWins: wins.length, totalLosses: losses.length, grossProfit, grossLoss, netPnl, totalFees };
+  }, [currentTrades]);
 
-  const uniqueAssets = [...new Set(trades.map(t => t.asset))];
+  const uniqueAssets = [...new Set(currentTrades.map(t => t.asset))];
 
   const saveEdit = (tradeId: string) => {
     const updates: Parameters<typeof editTrade>[1] = { notes: editNotes };
@@ -47,17 +51,25 @@ export default function TradeJournal() {
   };
 
   const renderTradeCard = (trade: typeof trades[0], compact = false) => (
-    <div key={trade.id} className="bg-slate-800 rounded-lg p-3 text-sm">
+    <div key={trade.id} className={`bg-slate-800 rounded-lg p-3 text-sm ${trade.archived ? 'opacity-60' : ''}`}>
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <button onClick={() => editTrade(trade.id, { starred: !trade.starred })}
-            className={`text-sm ${trade.starred ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'}`}>
-            {trade.starred ? '★' : '☆'}
-          </button>
+          {!trade.archived && (
+            <button onClick={() => editTrade(trade.id, { starred: !trade.starred })}
+              className={`text-sm ${trade.starred ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'}`}>
+              {trade.starred ? '★' : '☆'}
+            </button>
+          )}
+          {trade.archived && <span className="text-sm text-yellow-400">★</span>}
           <span className="font-bold">{trade.asset}</span>
           <span className={`text-xs px-1.5 py-0.5 rounded ${trade.side === 'long' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
             {trade.side.toUpperCase()}
           </span>
+          {trade.archived && trade.archivedAt && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+              Reset {new Date(trade.archivedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex justify-between items-start mt-1">
@@ -78,7 +90,7 @@ export default function TradeJournal() {
           </div>
         </div>
       </div>
-      {editingId === trade.id ? (
+      {!trade.archived && editingId === trade.id ? (
         <div className="mt-2 flex gap-1 items-center">
           <div className="text-xs text-slate-400">Exit:</div>
           <input type="number" value={editExit} onChange={e => setEditExit(e.target.value)}
@@ -99,14 +111,16 @@ export default function TradeJournal() {
       ) : (
         <div className="mt-1 flex justify-between items-center">
           <span className="text-xs text-slate-500 italic">{trade.notes || 'No notes'}</span>
-          <div className="flex gap-2">
-            <button onClick={() => { setEditingId(trade.id); setEditNotes(trade.notes); setEditExit(String(trade.exitPrice)); }}
-              className="text-xs text-blue-400 hover:text-blue-300">Edit</button>
-            {!compact && (
-              <button onClick={() => { if (confirm('Delete this trade? Balance will be adjusted.')) deleteTrade(trade.id); }}
-                className="text-xs text-red-400 hover:text-red-300">Delete</button>
-            )}
-          </div>
+          {!trade.archived && (
+            <div className="flex gap-2">
+              <button onClick={() => { setEditingId(trade.id); setEditNotes(trade.notes); setEditExit(String(trade.exitPrice)); }}
+                className="text-xs text-blue-400 hover:text-blue-300">Edit</button>
+              {!compact && (
+                <button onClick={() => { if (confirm('Delete this trade? Balance will be adjusted.')) deleteTrade(trade.id); }}
+                  className="text-xs text-red-400 hover:text-red-300">Delete</button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -155,6 +169,22 @@ export default function TradeJournal() {
       ) : (
         <div className="space-y-2">
           {filtered.map(trade => renderTradeCard(trade))}
+        </div>
+      )}
+
+      {archivedTrades.length > 0 && (
+        <div className="mt-6">
+          <button onClick={() => setShowArchived(!showArchived)}
+            className="flex items-center gap-2 text-sm font-semibold text-slate-400 hover:text-slate-300">
+            <span className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}>▶</span>
+            Archived Favorites
+            <span className="px-1.5 py-0.5 rounded bg-slate-700 text-xs font-mono">{archivedTrades.length}</span>
+          </button>
+          {showArchived && (
+            <div className="space-y-2 mt-3">
+              {[...archivedTrades].reverse().map(trade => renderTradeCard(trade, true))}
+            </div>
+          )}
         </div>
       )}
     </div>
