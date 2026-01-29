@@ -262,6 +262,7 @@ export const useStore = create<StoreState>()(
 
       resetAccount: () => {
         const s = get().settings;
+        const starredTrades = get().trades.filter(t => t.starred);
         set({
           balance: s.startingBalance,
           highWaterMark: s.startingBalance,
@@ -269,8 +270,10 @@ export const useStore = create<StoreState>()(
           lastDailyReset: Date.now(),
           realizedPnl: 0,
           positions: [],
-          trades: [],
+          trades: starredTrades,
           equityHistory: [],
+          priceAlerts: [],
+          pnlAlerts: [],
         });
         debouncedPush(() => get().pushCloud());
       },

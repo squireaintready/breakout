@@ -34,6 +34,8 @@ const KRAKEN_MAP: Record<string, string> = {
   BONK: 'BONK/USD',
   AAVE: 'AAVE/USD',
   LDO: 'LDO/USD',
+  KAS: 'KAS/USD',
+  BNB: 'BNB/USD',
 };
 
 const reverseMap = new Map<string, string>();

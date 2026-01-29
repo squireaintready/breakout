@@ -103,7 +103,7 @@ export default function Settings() {
           className="w-full py-2 bg-slate-600 text-white rounded text-sm hover:bg-slate-500 disabled:opacity-40">
           Import Backup
         </button>
-        <button onClick={() => { if (confirm('Reset all account data?')) resetAccount(); }}
+        <button onClick={() => { if (confirm('Reset account? All data will be cleared except starred trades.')) resetAccount(); }}
           className="w-full py-2 bg-red-600/80 text-white rounded text-sm hover:bg-red-500">
           Reset Account
         </button>

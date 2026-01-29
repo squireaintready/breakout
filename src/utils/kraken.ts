@@ -33,6 +33,7 @@ const KRAKEN_MAP: Record<string, string> = {
   AAVE: 'AAVE/USD',
   LDO: 'LDO/USD',
   KAS: 'KAS/USD',
+  BNB: 'BNB/USD',
 };
 
 export function toKrakenPair(asset: string): string {
