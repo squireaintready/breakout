@@ -119,6 +119,7 @@ export interface StoreState {
   resetPnlAlert: (id: string) => void;
   dismissPnlAlert: (id: string) => void;
   rearmPnlAlert: (id: string, updates: Partial<Pick<PnlAlert, 'targetPnl' | 'direction'>>) => void;
+  reopenTrade: (tradeId: string) => void;
   applySwapFees: () => void;
   pullCloud: () => Promise<void>;
   pushCloud: () => Promise<void>;
@@ -405,6 +406,31 @@ export const useStore = create<StoreState>()(
         set(state => ({
           pnlAlerts: state.pnlAlerts.map(a => a.id === id ? { ...a, ...updates, triggered: false, triggeredAt: undefined, createdAt: Date.now() } : a),
         }));
+        debouncedPush(() => get().pushCloud());
+      },
+
+      reopenTrade: (tradeId) => {
+        const state = get();
+        const trade = state.trades.find(t => t.id === tradeId);
+        if (!trade) return;
+        const position: Position = {
+          id: crypto.randomUUID(),
+          asset: trade.asset,
+          side: trade.side,
+          entryPrice: trade.entryPrice,
+          size: trade.size,
+          stopLoss: null,
+          takeProfit: null,
+          openedAt: trade.openedAt,
+        };
+        // Reverse the balance change from closing (add back pnl that was applied, re-deduct entry fee)
+        const entryFee = trade.size * (state.settings.tradingFeePct / 100);
+        set({
+          trades: state.trades.filter(t => t.id !== tradeId),
+          positions: [...state.positions, position],
+          balance: state.balance - trade.pnl - entryFee,
+          realizedPnl: state.realizedPnl - trade.pnl,
+        });
         debouncedPush(() => get().pushCloud());
       },
 

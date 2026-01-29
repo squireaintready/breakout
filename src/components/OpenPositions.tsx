@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
 import { BTC_ETH_ASSETS } from '../utils/constants';
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function OpenPositions({ prices }: Props) {
-  const { positions, balance, settings, closePosition, deletePosition, updatePositionStop, updatePositionTP, addPriceAlert } = useStore();
+  const { positions, balance, settings, trades, closePosition, deletePosition, updatePositionStop, updatePositionTP, addPriceAlert, reopenTrade } = useStore();
   const [closingId, setClosingId] = useState<string | null>(null);
   const [exitPrice, setExitPrice] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
@@ -19,6 +19,28 @@ export default function OpenPositions({ prices }: Props) {
   const [alertingId, setAlertingId] = useState<string | null>(null);
   const [alertPrice, setAlertPrice] = useState('');
   const [alertDir, setAlertDir] = useState<'above' | 'below'>('above');
+  const [slCloseBanner, setSlCloseBanner] = useState<{ asset: string; side: string } | null>(null);
+
+  // Listen for auto-close events from SL trigger
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setSlCloseBanner({ asset: detail.asset, side: detail.side });
+      const timer = setTimeout(() => setSlCloseBanner(null), 30_000);
+      return () => clearTimeout(timer);
+    };
+    window.addEventListener('sl-auto-close', handler);
+    return () => window.removeEventListener('sl-auto-close', handler);
+  }, []);
+
+  const handleUndoSlClose = useCallback(() => {
+    // Find the most recent auto-closed trade
+    const autoTrade = [...trades].reverse().find(t => t.notes === 'Auto-closed: SL hit');
+    if (autoTrade) {
+      reopenTrade(autoTrade.id);
+    }
+    setSlCloseBanner(null);
+  }, [trades, reopenTrade]);
 
   if (positions.length === 0) {
     return (
@@ -120,24 +142,36 @@ export default function OpenPositions({ prices }: Props) {
         </div>
       </div>
 
+      {slCloseBanner && (
+        <div className="mb-3 bg-red-900/50 border border-red-700 rounded-lg px-3 py-2 flex items-center justify-between text-xs">
+          <span>SL auto-closed <b>{slCloseBanner.asset}</b> {slCloseBanner.side.toUpperCase()}</span>
+          <button onClick={handleUndoSlClose}
+            className="px-2 py-0.5 bg-yellow-600 text-white rounded hover:bg-yellow-500 font-semibold">
+            Undo
+          </button>
+        </div>
+      )}
+
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
+      <div>
+        <table className="w-full text-xs table-fixed">
           <thead>
             <tr className="text-slate-400 text-left border-b border-slate-700">
-              <th className="pb-2 pr-3 font-medium">Symbol</th>
-              <th className="pb-2 pr-3 font-medium">Side</th>
-              <th className="pb-2 pr-3 font-medium text-right">Total Value</th>
-              <th className="pb-2 pr-3 font-medium text-right">% Acct</th>
-              <th className="pb-2 pr-3 font-medium text-right">Lot Size</th>
-              <th className="pb-2 pr-3 font-medium text-right">Fill Price</th>
-              <th className="pb-2 pr-3 font-medium text-right">Stop Loss</th>
-              <th className="pb-2 pr-3 font-medium text-right">Take Profit</th>
-              <th className="pb-2 pr-3 font-medium text-right">Current Price</th>
-              <th className="pb-2 pr-3 font-medium text-right">P&L</th>
-              <th className="pb-2 pr-3 font-medium text-right">To TP</th>
-              <th className="pb-2 font-medium text-right">Date & Time</th>
-              <th className="pb-2"></th>
+              <th className="pb-2 pr-1 font-medium w-[4.5%]">Sym</th>
+              <th className="pb-2 pr-1 font-medium w-[3%]">Side</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[6%]">Value</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[4%]">%Acct</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[5.5%]">Lot</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[7%]">Fill</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[7%]">SL</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[7%]">TP</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[5%]">SL$</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[5%]">TP$</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[7%]">Price</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[6%]">P&L</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[5%]">ToTP</th>
+              <th className="pb-2 pr-1 font-medium text-right w-[9%]">Date</th>
+              <th className="pb-2 w-[14%]"></th>
             </tr>
           </thead>
           <tbody>
@@ -148,30 +182,30 @@ export default function OpenPositions({ prices }: Props) {
               if (sortBy === 'pnl') return b.pnl - a.pnl;
               if (sortBy === 'totp') return (a.distToTP ?? Infinity) - (b.distToTP ?? Infinity);
               return 0;
-            }).map(({ pos, currentPrice, pnl, sizeQty, acctPct, distToTP }, i, sorted) => {
+            }).map(({ pos, currentPrice, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP }, i, sorted) => {
               const prevAsset = i > 0 ? sorted[i - 1].pos.asset : null;
               const isNewGroup = sortBy === 'symbol' && prevAsset !== null && prevAsset !== pos.asset;
               return (
               <tr key={pos.id} className={`hover:bg-slate-700/30 ${isNewGroup ? 'border-t border-slate-600' : 'border-b border-slate-700/50'}`}>
-                <td className="py-2 pr-3 font-bold text-slate-200">{pos.asset}</td>
-                <td className="py-2 pr-3">
+                <td className="py-2 pr-1 font-bold text-slate-200 truncate">{pos.asset}</td>
+                <td className="py-2 pr-1">
                   <span className={pos.side === 'long' ? 'text-green-400' : 'text-red-400'}>
-                    {pos.side === 'long' ? 'Buy' : 'Sell'}
+                    {pos.side === 'long' ? 'B' : 'S'}
                   </span>
                 </td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-400">{acctPct.toFixed(1)}%</td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
-                <td className="py-2 pr-3 text-right font-mono text-slate-300">{fmtPrice(pos.entryPrice)}</td>
+                <td className="py-2 pr-1 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                <td className="py-2 pr-1 text-right font-mono text-slate-400">{acctPct.toFixed(1)}%</td>
+                <td className="py-2 pr-1 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
+                <td className="py-2 pr-1 text-right font-mono text-slate-300">{fmtPrice(pos.entryPrice)}</td>
 
                 {/* Stop Loss - click to edit */}
-                <td className="py-2 pr-3 text-right font-mono">
+                <td className="py-2 pr-1 text-right font-mono">
                   {editingField?.id === pos.id && editingField.field === 'sl' ? (
                     <input type="number" value={editValue} autoFocus step={priceStep(editValue)}
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
+                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"
@@ -182,13 +216,13 @@ export default function OpenPositions({ prices }: Props) {
                 </td>
 
                 {/* Take Profit - click to edit */}
-                <td className="py-2 pr-3 text-right font-mono">
+                <td className="py-2 pr-1 text-right font-mono">
                   {editingField?.id === pos.id && editingField.field === 'tp' ? (
                     <input type="number" value={editValue} autoFocus step={priceStep(editValue)}
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
+                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"
@@ -198,7 +232,17 @@ export default function OpenPositions({ prices }: Props) {
                   )}
                 </td>
 
-                <td className={`py-2 pr-3 text-right font-mono ${
+                {/* SL Loss */}
+                <td className="py-2 pr-1 text-right font-mono text-red-400">
+                  {pos.stopLoss != null ? `-$${(riskAmt + pos.size * feePct).toFixed(0)}` : <span className="text-slate-600">&mdash;</span>}
+                </td>
+
+                {/* TP Gain */}
+                <td className="py-2 pr-1 text-right font-mono text-green-400">
+                  {pos.takeProfit != null ? `+$${(rewardAmt - pos.size * feePct).toFixed(0)}` : <span className="text-slate-600">&mdash;</span>}
+                </td>
+
+                <td className={`py-2 pr-1 text-right font-mono ${
                   currentPrice > pos.entryPrice
                     ? (pos.side === 'long' ? 'text-green-400' : 'text-red-400')
                     : currentPrice < pos.entryPrice
@@ -208,15 +252,15 @@ export default function OpenPositions({ prices }: Props) {
                   {fmtPrice(currentPrice)}
                 </td>
 
-                <td className={`py-2 pr-3 text-right font-mono font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <td className={`py-2 pr-1 text-right font-mono font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {pnl >= 0 ? '' : '-'}{pnl >= 0 ? '' : ''}{Math.abs(pnl).toFixed(2)}
                 </td>
 
-                <td className="py-2 pr-3 text-right font-mono text-slate-400">
+                <td className="py-2 pr-1 text-right font-mono text-slate-400">
                   {distToTP != null ? `${distToTP.toFixed(2)}%` : <span className="text-slate-600">&mdash;</span>}
                 </td>
 
-                <td className="py-2 pr-3 text-right font-mono text-slate-400 whitespace-nowrap">
+                <td className="py-2 pr-1 text-right font-mono text-slate-400 whitespace-nowrap">
                   {fmtDate(pos.openedAt)}
                 </td>
 

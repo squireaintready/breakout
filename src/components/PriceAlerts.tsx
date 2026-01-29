@@ -304,7 +304,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                 <input type="text" value={editNote} onChange={e => setEditNote(e.target.value)}
                   placeholder="Note"
                   className="w-20 bg-slate-700 rounded px-1.5 py-0.5 text-xs" />
-                <button onClick={() => setEditPersistent(p => !p)}
+                <button onClick={() => { const next = !editPersistent; setEditPersistent(next); editPriceAlert(a.id, { persistent: next }); }}
                   className={`px-1.5 py-0.5 rounded text-xs font-bold ${editPersistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                   title="Persistent">∞</button>
                 <button onClick={() => { const p = parseFloat(editPrice); if (p > 0) { editPriceAlert(a.id, { targetPrice: p, direction: editDir, note: editNote, persistent: editPersistent }); setEditingId(null); } }}
@@ -508,7 +508,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                     }} />
                   <input type="text" value={editPnlNote} onChange={e => setEditPnlNote(e.target.value)}
                     placeholder="Note" className="w-20 bg-slate-700 rounded px-1.5 py-0.5 text-xs" />
-                  <button onClick={() => setEditPnlPersistent(p => !p)}
+                  <button onClick={() => { const next = !editPnlPersistent; setEditPnlPersistent(next); editPnlAlert(a.id, { persistent: next }); }}
                     className={`px-1.5 py-0.5 rounded text-xs font-bold ${editPnlPersistent ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
                     title="Persistent">∞</button>
                   <button onClick={() => { const v = parseFloat(editPnlTarget); if (!isNaN(v)) { editPnlAlert(a.id, { targetPnl: v, direction: editPnlDir, note: editPnlNote, persistent: editPnlPersistent }); setEditingPnlId(null); } }}

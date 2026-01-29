@@ -66,7 +66,7 @@ function notify(title: string, body: string, positionInfo: string = '', meta: { 
 const COOLDOWN_MS = 30_000;
 
 export function usePriceAlerts(prices: PriceMap) {
-  const { priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert } = useStore();
+  const { priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert, closePosition } = useStore();
   const firedRef = useRef<Set<string>>(new Set());
   const cooldownRef = useRef<Map<string, number>>(new Map());
   // Tracks alerts that have been seen on the "safe" side (opposite of trigger direction)
@@ -143,6 +143,10 @@ export function usePriceAlerts(prices: PriceMap) {
               `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
               formatPositions(pos.asset, positions, prices)
             );
+            // Auto-close the position at stop loss price
+            closePosition(pos.id, pos.stopLoss!, 'Auto-closed: SL hit');
+            // Notify UI for undo banner
+            window.dispatchEvent(new CustomEvent('sl-auto-close', { detail: { asset: pos.asset, side: pos.side } }));
           }
         }
       }
