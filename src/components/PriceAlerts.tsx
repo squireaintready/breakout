@@ -84,7 +84,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
       let cmp = 0;
       if (pnlSort === 'date') cmp = (b.createdAt ?? 0) - (a.createdAt ?? 0);
       else if (pnlSort === 'dist') cmp = Math.abs(a.targetPnl - unrealizedPnl) - Math.abs(b.targetPnl - unrealizedPnl);
-      else cmp = b.targetPnl - a.targetPnl;
+      else cmp = a.targetPnl - b.targetPnl;
       return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
     });
     return sorted;
