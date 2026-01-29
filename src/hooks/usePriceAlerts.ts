@@ -69,6 +69,9 @@ export function usePriceAlerts(prices: PriceMap) {
   const { priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert } = useStore();
   const firedRef = useRef<Set<string>>(new Set());
   const cooldownRef = useRef<Map<string, number>>(new Map());
+  // Tracks alerts that have been seen on the "safe" side (opposite of trigger direction)
+  // An alert can only fire once it has been armed (seen on safe side first)
+  const armedRef = useRef<Set<string>>(new Set());
   const mountTime = useRef(Date.now());
 
   // Request notification permission on mount
@@ -86,7 +89,7 @@ export function usePriceAlerts(prices: PriceMap) {
       }
     }
 
-    // Check custom alerts
+    // Check custom alerts (crossover logic: must see safe side before firing)
     for (const alert of priceAlerts) {
       if (alert.triggered) continue;
       if (firedRef.current.has(alert.id)) continue;
@@ -94,21 +97,30 @@ export function usePriceAlerts(prices: PriceMap) {
       if (price == null) continue;
 
       const hit = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
-      if (hit) {
-        const lastFired = cooldownRef.current.get(alert.id) ?? 0;
-        if (Date.now() - lastFired < COOLDOWN_MS) continue;
-        cooldownRef.current.set(alert.id, Date.now());
-        if (!alert.persistent) {
-          firedRef.current.add(alert.id);
-          markAlertTriggered(alert.id);
-        }
-        notify(
-          `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
-          `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
-          formatPositions(alert.asset, positions, prices),
-          { createdAt: alert.createdAt }
-        );
+      if (!hit) {
+        // Price is on safe side — arm the alert for future crossover
+        armedRef.current.add(alert.id);
+        continue;
       }
+      // Price crossed threshold — only fire if previously armed
+      if (!armedRef.current.has(alert.id)) continue;
+      const lastFired = cooldownRef.current.get(alert.id) ?? 0;
+      if (Date.now() - lastFired < COOLDOWN_MS) continue;
+      cooldownRef.current.set(alert.id, Date.now());
+      if (!alert.persistent) {
+        firedRef.current.add(alert.id);
+        armedRef.current.delete(alert.id);
+        markAlertTriggered(alert.id);
+      } else {
+        // Persistent: disarm so it needs to cross back and over again
+        armedRef.current.delete(alert.id);
+      }
+      notify(
+        `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
+        `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
+        formatPositions(alert.asset, positions, prices),
+        { createdAt: alert.createdAt }
+      );
     }
 
     // Check auto SL/TP for open positions
@@ -169,21 +181,30 @@ export function usePriceAlerts(prices: PriceMap) {
       const pnlKey = `pnl-${alert.id}`;
       const met = alert.direction === 'above' ? totalPnl >= alert.targetPnl : totalPnl <= alert.targetPnl;
 
-      if (!alert.triggered && met && !firedRef.current.has(pnlKey)) {
-        const lastFired = cooldownRef.current.get(pnlKey) ?? 0;
-        if (Date.now() - lastFired < COOLDOWN_MS) continue;
-        cooldownRef.current.set(pnlKey, Date.now());
-        if (!alert.persistent) {
-          firedRef.current.add(pnlKey);
-          markPnlAlertTriggered(alert.id);
+      if (!alert.triggered && !firedRef.current.has(pnlKey)) {
+        if (!met) {
+          // PnL is on safe side — arm for crossover
+          armedRef.current.add(pnlKey);
+        } else if (armedRef.current.has(pnlKey)) {
+          // Crossed threshold and was armed
+          const lastFired = cooldownRef.current.get(pnlKey) ?? 0;
+          if (Date.now() - lastFired < COOLDOWN_MS) continue;
+          cooldownRef.current.set(pnlKey, Date.now());
+          if (!alert.persistent) {
+            firedRef.current.add(pnlKey);
+            armedRef.current.delete(pnlKey);
+            markPnlAlertTriggered(alert.id);
+          } else {
+            armedRef.current.delete(pnlKey);
+          }
+          const dir = alert.direction === 'above' ? '↑' : '↓';
+          notify(
+            `P&L ${dir} $${alert.targetPnl}`,
+            `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
+            '',
+            { createdAt: alert.createdAt }
+          );
         }
-        const dir = alert.direction === 'above' ? '↑' : '↓';
-        notify(
-          `P&L ${dir} $${alert.targetPnl}`,
-          `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
-          '',
-          { createdAt: alert.createdAt }
-        );
       }
 
       if (alert.triggered && !met && !alert.persistent) {

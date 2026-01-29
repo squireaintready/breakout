@@ -4,6 +4,7 @@ import { pushState } from './state.js';
 
 const firedSet = new Set<string>();
 const cooldownMap = new Map<string, number>();
+const armedSet = new Set<string>();
 const COOLDOWN_MS = 30_000;
 const startTime = Date.now();
 
@@ -60,7 +61,7 @@ export function cleanFiredSet(state: AppState): void {
 export function checkAlerts(prices: Map<string, number>, state: AppState): void {
   let stateModified = false;
 
-  // 1. Price alerts
+  // 1. Price alerts (crossover: must see safe side before firing)
   for (const alert of state.priceAlerts) {
     if (alert.triggered) continue;
     if (firedSet.has(alert.id)) continue;
@@ -68,23 +69,29 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     if (price == null) continue;
 
     const hit = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
-    if (hit) {
-      const lastFired = cooldownMap.get(alert.id) ?? 0;
-      if (Date.now() - lastFired < COOLDOWN_MS) continue;
-      cooldownMap.set(alert.id, Date.now());
-      if (!alert.persistent) {
-        firedSet.add(alert.id);
-        alert.triggered = true;
-        alert.triggeredAt = Date.now();
-        stateModified = true;
-      }
-      notify(
-        `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
-        `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
-        formatPositions(alert.asset, state.positions, prices),
-        { createdAt: alert.createdAt },
-      );
+    if (!hit) {
+      armedSet.add(alert.id);
+      continue;
     }
+    if (!armedSet.has(alert.id)) continue;
+    const lastFired = cooldownMap.get(alert.id) ?? 0;
+    if (Date.now() - lastFired < COOLDOWN_MS) continue;
+    cooldownMap.set(alert.id, Date.now());
+    if (!alert.persistent) {
+      firedSet.add(alert.id);
+      armedSet.delete(alert.id);
+      alert.triggered = true;
+      alert.triggeredAt = Date.now();
+      stateModified = true;
+    } else {
+      armedSet.delete(alert.id);
+    }
+    notify(
+      `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
+      `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
+      formatPositions(alert.asset, state.positions, prices),
+      { createdAt: alert.createdAt },
+    );
   }
 
   // 2. SL/TP for open positions
@@ -148,23 +155,30 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     const pnlKey = `pnl-${alert.id}`;
     const met = alert.direction === 'above' ? totalPnl >= alert.targetPnl : totalPnl <= alert.targetPnl;
 
-    if (!alert.triggered && met && !firedSet.has(pnlKey)) {
-      const lastFired = cooldownMap.get(pnlKey) ?? 0;
-      if (Date.now() - lastFired < COOLDOWN_MS) continue;
-      cooldownMap.set(pnlKey, Date.now());
-      if (!alert.persistent) {
-        firedSet.add(pnlKey);
-        alert.triggered = true;
-        alert.triggeredAt = Date.now();
-        stateModified = true;
+    if (!alert.triggered && !firedSet.has(pnlKey)) {
+      if (!met) {
+        armedSet.add(pnlKey);
+      } else if (armedSet.has(pnlKey)) {
+        const lastFired = cooldownMap.get(pnlKey) ?? 0;
+        if (Date.now() - lastFired < COOLDOWN_MS) continue;
+        cooldownMap.set(pnlKey, Date.now());
+        if (!alert.persistent) {
+          firedSet.add(pnlKey);
+          armedSet.delete(pnlKey);
+          alert.triggered = true;
+          alert.triggeredAt = Date.now();
+          stateModified = true;
+        } else {
+          armedSet.delete(pnlKey);
+        }
+        const dir = alert.direction === 'above' ? '↑' : '↓';
+        notify(
+          `P&L ${dir} $${alert.targetPnl}`,
+          `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
+          '',
+          { createdAt: alert.createdAt },
+        );
       }
-      const dir = alert.direction === 'above' ? '↑' : '↓';
-      notify(
-        `P&L ${dir} $${alert.targetPnl}`,
-        `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
-        '',
-        { createdAt: alert.createdAt },
-      );
     }
 
     if (alert.triggered && !met && !alert.persistent) {
