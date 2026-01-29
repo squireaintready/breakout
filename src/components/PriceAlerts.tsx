@@ -40,7 +40,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const [rearmPnlTarget, setRearmPnlTarget] = useState('');
   const [rearmPnlDir, setRearmPnlDir] = useState<'above' | 'below'>('above');
   const [confirmPnlClear, setConfirmPnlClear] = useState(false);
-  const [pnlSort, setPnlSort] = useState<'date' | 'dist' | 'amount'>('date');
+  const [pnlSort, setPnlSort] = useState<'date' | 'dist' | 'amount'>('amount');
   const [persistent, setPersistent] = useState(false);
   const [pnlPersistent, setPnlPersistent] = useState(false);
   const [editPersistent, setEditPersistent] = useState(false);
@@ -104,7 +104,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   };
 
   const fmtDate = (ts?: number) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' }) : '';
-  const [alertSort, setAlertSort] = useState<'symbol' | 'date' | 'dist'>('date');
+  const [alertSort, setAlertSort] = useState<'symbol' | 'date' | 'dist'>('dist');
 
   const getDist = (a: { asset: string; targetPrice: number }) => {
     const cur = prices[a.asset];
