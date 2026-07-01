@@ -1,15 +1,22 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useStore } from './store/useStore';
 import { useKrakenPrices } from './hooks/useKrakenPrices';
 import Layout, { type TabId } from './components/Layout';
 import AlertBanner from './components/AlertBanner';
 import Dashboard from './components/Dashboard';
-import DrawdownTracker from './components/DrawdownTracker';
-import TradeJournal from './components/TradeJournal';
-import Settings from './components/Settings';
-import TradeForm from './components/TradeForm';
 import { usePriceAlerts } from './hooks/usePriceAlerts';
 import { SUPPORTED_ASSETS } from './utils/constants';
+
+// Route-level code splitting: these tabs (and the recharts-heavy Drawdown view)
+// load on demand so the initial bundle stays small.
+const DrawdownTracker = lazy(() => import('./components/DrawdownTracker'));
+const TradeJournal = lazy(() => import('./components/TradeJournal'));
+const Settings = lazy(() => import('./components/Settings'));
+const TradeForm = lazy(() => import('./components/TradeForm'));
+
+const TabFallback = () => (
+  <div className="text-center text-slate-500 text-sm py-10">Loading…</div>
+);
 
 function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [pw, setPw] = useState('');
@@ -110,11 +117,19 @@ export default function App() {
           <Dashboard prices={prices} onAddPosition={() => setShowTradeForm(true)} />
         </>
       )}
-      {tab === 'drawdown' && <DrawdownTracker />}
-      {tab === 'journal' && <TradeJournal />}
-      {tab === 'settings' && <Settings />}
+      {(tab === 'drawdown' || tab === 'journal' || tab === 'settings') && (
+        <Suspense fallback={<TabFallback />}>
+          {tab === 'drawdown' && <DrawdownTracker />}
+          {tab === 'journal' && <TradeJournal />}
+          {tab === 'settings' && <Settings />}
+        </Suspense>
+      )}
 
-      {showTradeForm && <TradeForm prices={prices} onClose={() => setShowTradeForm(false)} />}
+      {showTradeForm && (
+        <Suspense fallback={null}>
+          <TradeForm prices={prices} onClose={() => setShowTradeForm(false)} />
+        </Suspense>
+      )}
     </Layout>
   );
 }

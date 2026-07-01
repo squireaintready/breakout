@@ -2,6 +2,9 @@
   "name": "breakout-alert-checker",
   "version": "1.0.0",
   "description": "Standalone alert checker for Breakout trading dashboard",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

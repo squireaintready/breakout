@@ -5,7 +5,9 @@ import type { PriceMap } from './useKrakenPrices';
 
 function playAlertSound() {
   try {
-    const ctx = new AudioContext();
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
     // Two-tone beep
     [520, 680].forEach((freq, i) => {
       const osc = ctx.createOscillator();
@@ -18,7 +20,9 @@ function playAlertSound() {
       osc.start(ctx.currentTime + i * 0.15);
       osc.stop(ctx.currentTime + i * 0.15 + 0.12);
     });
-  } catch {}
+  } catch {
+    // Audio may be blocked until the user interacts with the page; ignore.
+  }
 }
 
 function sendTelegram(message: string) {
@@ -54,8 +58,8 @@ function fmtTs(ts?: number) {
 
 function notify(title: string, body: string, positionInfo: string = '', meta: { createdAt?: number } = {}) {
   playAlertSound();
-  if (Notification.permission === 'granted') {
-    new Notification(title, { body, icon: '/favicon.ico' });
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon: '/favicon.svg' });
   }
   const now = fmtTs(Date.now());
   const created = meta.createdAt ? fmtTs(meta.createdAt) : '';
@@ -72,10 +76,11 @@ export function usePriceAlerts(prices: PriceMap) {
   // Tracks alerts that have been seen on the "safe" side (opposite of trigger direction)
   // An alert can only fire once it has been armed (seen on safe side first)
   const armedRef = useRef<Set<string>>(new Set());
-  const mountTime = useRef(Date.now());
+  const mountTime = useRef(0);
 
-  // Request notification permission on mount
+  // Record mount time and request notification permission on mount.
   useEffect(() => {
+    mountTime.current = Date.now();
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
@@ -216,5 +221,5 @@ export function usePriceAlerts(prices: PriceMap) {
         firedRef.current.delete(pnlKey);
       }
     }
-  }, [prices, priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert]);
+  }, [prices, priceAlerts, pnlAlerts, positions, markAlertTriggered, markPnlAlertTriggered, resetPnlAlert, closePosition]);
 }

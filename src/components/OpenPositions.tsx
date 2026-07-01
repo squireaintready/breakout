@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
-import { BTC_ETH_ASSETS } from '../utils/constants';
 import { priceStep } from '../utils/priceStep';
 
 interface Props {
@@ -59,42 +58,34 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
 
   const feePct = settings.tradingFeePct / 100;
 
-  let totalPnlIfAllSLHit = 0;
-  let totalPnlIfAllTPHit = 0;
-  let totalExposure = 0;
-  let totalRiskAtStops = 0;
-  let totalUnrealizedPnl = 0;
-
   const positionRows = positions.map(pos => {
     const currentPrice = prices[pos.asset] || pos.entryPrice;
     const dir = pos.side === 'long' ? 1 : -1;
     const pnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * pos.size * dir;
-    totalUnrealizedPnl += pnl;
-    totalExposure += pos.size;
 
-    const leverage = pos.size / balance;
-    const maxLev = BTC_ETH_ASSETS.includes(pos.asset) ? settings.btcEthLeverage : settings.altLeverage;
     const sizeQty = pos.size / pos.entryPrice;
     const acctPct = balance > 0 ? (pos.size / balance / 2) * 100 : 0;
 
     const riskAmt = pos.stopLoss
       ? (Math.abs(pos.entryPrice - pos.stopLoss) / pos.entryPrice) * pos.size
       : 0;
-    totalRiskAtStops += riskAmt + (pos.stopLoss ? pos.size * feePct : 0);
-
     const rewardAmt = pos.takeProfit
       ? (Math.abs(pos.takeProfit - pos.entryPrice) / pos.entryPrice) * pos.size
       : 0;
-
-    if (pos.stopLoss) totalPnlIfAllSLHit += -riskAmt - pos.size * feePct;
-    if (pos.takeProfit) totalPnlIfAllTPHit += rewardAmt - pos.size * feePct;
 
     const distToTP = pos.takeProfit && currentPrice > 0
       ? ((pos.takeProfit - currentPrice) / currentPrice) * 100 * dir
       : null;
 
-    return { pos, currentPrice, pnl, leverage, maxLev, riskAmt, rewardAmt, sizeQty, acctPct, distToTP };
+    return { pos, currentPrice, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP };
   });
+
+  const totalUnrealizedPnl = positionRows.reduce((s, r) => s + r.pnl, 0);
+  const totalExposure = positionRows.reduce((s, r) => s + r.pos.size, 0);
+  const totalPnlIfAllSLHit = positionRows.reduce(
+    (s, r) => s + (r.pos.stopLoss ? -r.riskAmt - r.pos.size * feePct : 0), 0);
+  const totalPnlIfAllTPHit = positionRows.reduce(
+    (s, r) => s + (r.pos.takeProfit ? r.rewardAmt - r.pos.size * feePct : 0), 0);
 
   const handleClose = (id: string) => {
     const pos = positions.find(p => p.id === id);

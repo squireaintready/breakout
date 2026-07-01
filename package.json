@@ -1,12 +1,17 @@
 {
-  "name": "breakout-temp",
+  "name": "breakout",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "description": "Real-time crypto trading terminal: position sizing, drawdown limits, journal, and price/P&L alerts.",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "typecheck": "tsc -b",
     "preview": "vite preview"
   },
   "dependencies": {

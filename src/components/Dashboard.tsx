@@ -1,12 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, lazy, Suspense } from 'react';
 import { useStore } from '../store/useStore';
 import { calcDailyDrawdownPct, calcTotalDrawdownPct, calcRiskIfAllStopsHit } from '../utils/drawdown';
 import DrawdownBars from './DrawdownBars';
 import PositionSizer from './PositionSizer';
 import OpenPositions from './OpenPositions';
-import EquityChart from './EquityChart';
 import PriceAlerts from './PriceAlerts';
 import type { PriceMap } from '../hooks/useKrakenPrices';
+
+// recharts is heavy; load the equity curve after the dashboard paints.
+const EquityChart = lazy(() => import('./EquityChart'));
 
 interface Props {
   prices: PriceMap;
@@ -52,7 +54,7 @@ export default function Dashboard({ prices, onAddPosition }: Props) {
   };
 
   return (
-    <div className="space-y-4 pb-20 sm:pb-4">
+    <div className="space-y-4">
       {/* Balance card */}
       <div className="bg-slate-800 rounded-xl p-4">
         <div className="text-slate-400 text-xs">Current Balance</div>
@@ -121,7 +123,9 @@ export default function Dashboard({ prices, onAddPosition }: Props) {
       <PositionSizer prices={prices} />
       <OpenPositions prices={prices} onAddPosition={onAddPosition} />
       <PriceAlerts prices={prices} unrealizedPnl={unrealizedPnl} />
-      <EquityChart />
+      <Suspense fallback={<div className="bg-slate-800 rounded-xl p-4 h-[248px]" />}>
+        <EquityChart />
+      </Suspense>
     </div>
   );
 }

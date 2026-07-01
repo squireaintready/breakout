@@ -5,6 +5,9 @@ const PASSWORD = process.env.BREAKOUT_PASSWORD || '';
 
 let cachedState: AppState | null = null;
 let pollInterval: ReturnType<typeof setInterval> | undefined;
+let fetching = false;
+
+const REQUEST_TIMEOUT_MS = 8000;
 
 function headers(json = false): Record<string, string> {
   const h: Record<string, string> = {};
@@ -14,8 +17,13 @@ function headers(json = false): Record<string, string> {
 }
 
 export async function fetchState(): Promise<void> {
+  if (fetching) return; // skip if a previous poll is still in flight
+  fetching = true;
   try {
-    const res = await fetch(`${API_URL}/api/state`, { headers: headers() });
+    const res = await fetch(`${API_URL}/api/state`, {
+      headers: headers(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json() as AppState | null;
     if (data && typeof data === 'object' && data.balance !== undefined) {
@@ -23,6 +31,8 @@ export async function fetchState(): Promise<void> {
     }
   } catch (err) {
     console.error('[state] Fetch error:', err);
+  } finally {
+    fetching = false;
   }
 }
 
@@ -32,6 +42,7 @@ export async function pushState(state: AppState): Promise<void> {
       method: 'PUT',
       headers: headers(true),
       body: JSON.stringify(state),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) console.error('[state] Push failed:', res.status);
   } catch (err) {

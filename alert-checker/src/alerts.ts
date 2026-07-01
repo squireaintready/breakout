@@ -16,6 +16,13 @@ function fmtTs(ts?: number): string {
   });
 }
 
+// Escape user-supplied text before it goes into a parse_mode: 'HTML' message.
+// An unescaped '<', '>' or '&' in a note makes Telegram reject the whole
+// message, silently dropping the alert.
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function formatPositions(asset: string, positions: Position[], prices: Map<string, number>): string {
   const matched = positions.filter(p => p.asset === asset);
   if (matched.length === 0) return '';
@@ -40,6 +47,13 @@ function notify(title: string, body: string, positionInfo = '', meta: { createdA
   sendTelegram(message);
 }
 
+// Does the entity a cooldown/armed key refers to still exist in state?
+function keyStillRelevant(key: string, state: AppState): boolean {
+  if (key.startsWith('pnl-')) return state.pnlAlerts.some(a => a.id === key.slice(4));
+  if (key.startsWith('sl-') || key.startsWith('tp-')) return state.positions.some(p => p.id === key.slice(3));
+  return state.priceAlerts.some(a => a.id === key);
+}
+
 export function cleanFiredSet(state: AppState): void {
   // Remove fired entries for alerts that no longer exist or were re-armed
   for (const id of firedSet) {
@@ -55,6 +69,15 @@ export function cleanFiredSet(state: AppState): void {
       const alert = state.priceAlerts.find(a => a.id === id);
       if (!alert || !alert.triggered) firedSet.delete(id);
     }
+  }
+
+  // Prune cooldown/armed bookkeeping for deleted alerts/positions so these
+  // maps don't grow unbounded and stale entries can't skew later checks.
+  for (const key of cooldownMap.keys()) {
+    if (!keyStillRelevant(key, state)) cooldownMap.delete(key);
+  }
+  for (const key of armedSet) {
+    if (!keyStillRelevant(key, state)) armedSet.delete(key);
   }
 }
 
@@ -88,7 +111,7 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     }
     notify(
       `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
-      `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
+      `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + esc(alert.note) : ''}`,
       formatPositions(alert.asset, state.positions, prices),
       { createdAt: alert.createdAt },
     );
@@ -102,44 +125,39 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
 
     if (pos.stopLoss != null) {
       const slKey = `sl-${pos.id}`;
-      if (!firedSet.has(slKey)) {
-        const slHit = dir === 1 ? price <= pos.stopLoss : price >= pos.stopLoss;
-        if (slHit) {
-          const lastFired = cooldownMap.get(slKey) ?? 0;
-          if (Date.now() - lastFired < COOLDOWN_MS) continue;
-          firedSet.add(slKey);
-          cooldownMap.set(slKey, Date.now());
-          notify(
-            `STOP LOSS — ${pos.asset}`,
-            `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
-            formatPositions(pos.asset, state.positions, prices),
-          );
-        }
+      const slHit = dir === 1 ? price <= pos.stopLoss : price >= pos.stopLoss;
+      const lastFired = cooldownMap.get(slKey) ?? 0;
+      if (!firedSet.has(slKey) && slHit && Date.now() - lastFired >= COOLDOWN_MS) {
+        firedSet.add(slKey);
+        cooldownMap.set(slKey, Date.now());
+        notify(
+          `STOP LOSS — ${pos.asset}`,
+          `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
+          formatPositions(pos.asset, state.positions, prices),
+        );
       }
     }
 
     if (pos.takeProfit != null) {
       const tpKey = `tp-${pos.id}`;
-      if (!firedSet.has(tpKey)) {
-        const tpHit = dir === 1 ? price >= pos.takeProfit : price <= pos.takeProfit;
-        if (tpHit) {
-          const lastFired = cooldownMap.get(tpKey) ?? 0;
-          if (Date.now() - lastFired < COOLDOWN_MS) continue;
-          firedSet.add(tpKey);
-          cooldownMap.set(tpKey, Date.now());
-          notify(
-            `TAKE PROFIT — ${pos.asset}`,
-            `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
-            formatPositions(pos.asset, state.positions, prices),
-          );
-        }
+      const tpHit = dir === 1 ? price >= pos.takeProfit : price <= pos.takeProfit;
+      const lastFired = cooldownMap.get(tpKey) ?? 0;
+      if (!firedSet.has(tpKey) && tpHit && Date.now() - lastFired >= COOLDOWN_MS) {
+        firedSet.add(tpKey);
+        cooldownMap.set(tpKey, Date.now());
+        notify(
+          `TAKE PROFIT — ${pos.asset}`,
+          `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
+          formatPositions(pos.asset, state.positions, prices),
+        );
       }
     }
   }
 
-  // 3. P&L alerts — skip for 10s after startup, wait for all position prices
-  const allPricesLoaded = state.positions.length === 0 || state.positions.every(p => prices.get(p.asset) != null);
-  if (!allPricesLoaded || Date.now() - startTime < 10000) {
+  // 3. P&L alerts — skip only for the first 10s after startup so prices can
+  //    load. P&L is summed over positions that have a price (an un-mapped or
+  //    delisted asset is skipped rather than disabling every P&L alert).
+  if (Date.now() - startTime < 10000) {
     if (stateModified) pushState(state);
     return;
   }
@@ -173,8 +191,8 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
         }
         const dir = alert.direction === 'above' ? '↑' : '↓';
         notify(
-          `P&L ${dir} $${alert.targetPnl}`,
-          `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
+          `P&amp;L ${dir} $${alert.targetPnl}`,
+          `Unrealized P&amp;L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + esc(alert.note) : ''}`,
           '',
           { createdAt: alert.createdAt },
         );

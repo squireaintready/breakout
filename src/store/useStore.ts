@@ -137,7 +137,11 @@ function getDataSnapshot(state: StoreState) {
 
 // Debounced push
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
+// True while there are local changes not yet confirmed as saved to the cloud.
+// Guards pullCloud from overwriting unsynced local edits (e.g. on tab refocus).
+let hasUnsyncedChanges = false;
 function debouncedPush(fn: () => void) {
+  hasUnsyncedChanges = true;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(fn, 1500);
 }
@@ -462,8 +466,10 @@ export const useStore = create<StoreState>()(
           });
           if (!res.ok) throw new Error('fetch failed');
           const data = await res.json();
-          if (data && typeof data === 'object' && data.balance !== undefined) {
-            // Only apply cloud data if it's newer or we have no local data
+          // Last-write-wins sync. Skip applying cloud state if this tab has
+          // local edits still waiting to upload, so a refetch doesn't clobber
+          // unsynced work.
+          if (!hasUnsyncedChanges && data && typeof data === 'object' && data.balance !== undefined) {
             const snap: Record<string, unknown> = {};
             for (const key of DATA_KEYS) {
               if (key in data) snap[key] = data[key];
@@ -483,12 +489,15 @@ export const useStore = create<StoreState>()(
           const pw = localStorage.getItem('breakout-password') || '';
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (pw) headers['Authorization'] = `Bearer ${pw}`;
-          await fetch('/api/state', {
+          const res = await fetch('/api/state', {
             method: 'PUT',
             headers,
             body: JSON.stringify(snap),
           });
-          set({ _lastCloud: Date.now() });
+          if (res.ok) {
+            hasUnsyncedChanges = false;
+            set({ _lastCloud: Date.now() });
+          }
         } catch {
           // Silently fail — data is safe in localStorage
         }

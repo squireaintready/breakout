@@ -93,14 +93,25 @@ export function onPrice(cb: () => void): void {
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let watchdogTimer: ReturnType<typeof setInterval> | undefined;
+let lastMessageAt = 0;
+let shuttingDown = false;
+
+// Kraken v2 emits ticker updates plus periodic heartbeats. If nothing arrives
+// for this long the socket is treated as dead (half-open connections never fire
+// a close event) and force-reconnected — otherwise prices, and therefore every
+// alert, would silently stall with no indication.
+const STALE_TIMEOUT_MS = 60_000;
 
 export function connect(): void {
   const allPairs = Object.values(KRAKEN_MAP);
+  lastMessageAt = Date.now();
 
   ws = new WebSocket('wss://ws.kraken.com/v2');
 
   ws.on('open', () => {
     console.log('[kraken] Connected');
+    lastMessageAt = Date.now();
     ws!.send(JSON.stringify({
       method: 'subscribe',
       params: { channel: 'ticker', symbol: allPairs },
@@ -108,21 +119,26 @@ export function connect(): void {
   });
 
   ws.on('message', (raw) => {
+    lastMessageAt = Date.now();
     try {
       const data = JSON.parse(raw.toString());
-      if (data.channel === 'ticker' && data.data) {
+      if (data.channel === 'ticker' && Array.isArray(data.data)) {
         for (const tick of data.data) {
           const asset = fromKrakenPair(tick.symbol);
-          if (asset && tick.last !== undefined) {
-            prices.set(asset, tick.last);
+          const last = Number(tick.last);
+          if (asset && Number.isFinite(last)) {
+            prices.set(asset, last);
           }
         }
         for (const cb of listeners) cb();
       }
-    } catch {}
+    } catch {
+      // Ignore malformed frames; the next valid tick refreshes prices.
+    }
   });
 
   ws.on('close', () => {
+    if (shuttingDown) return;
     console.log('[kraken] Disconnected, reconnecting in 3s...');
     reconnectTimer = setTimeout(connect, 3000);
   });
@@ -131,9 +147,21 @@ export function connect(): void {
     console.error('[kraken] Error:', err.message);
     ws?.close();
   });
+
+  if (!watchdogTimer) {
+    watchdogTimer = setInterval(() => {
+      if (shuttingDown) return;
+      if (Date.now() - lastMessageAt > STALE_TIMEOUT_MS) {
+        console.warn('[kraken] Stale connection, forcing reconnect');
+        ws?.terminate();
+      }
+    }, 15_000);
+  }
 }
 
 export function disconnect(): void {
+  shuttingDown = true;
   clearTimeout(reconnectTimer);
+  clearInterval(watchdogTimer);
   ws?.close();
 }

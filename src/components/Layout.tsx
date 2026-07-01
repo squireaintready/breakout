@@ -34,11 +34,11 @@ export default function Layout({ activeTab, onTabChange, children, syncing }: Pr
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto p-4 max-w-4xl mx-auto w-full">
+      <main className="app-main flex-1 overflow-auto p-4 max-w-4xl mx-auto w-full">
         {children}
       </main>
 
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-700 flex">
+      <nav className="app-bottom-nav sm:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-700 flex">
         {TABS.map(tab => (
           <button key={tab.id} onClick={() => onTabChange(tab.id)}
             className={`flex-1 py-3 text-center text-xs ${activeTab === tab.id ? 'text-blue-400' : 'text-slate-500'}`}>

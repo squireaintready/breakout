@@ -2,42 +2,58 @@ import { Redis } from '@upstash/redis';
 
 const KEY = 'breakout-state';
 
+// Constant-time comparison so the shared secret can't be recovered via timing.
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 export default async function handler(req: Request): Promise<Response> {
+  // Fail closed: without a configured secret the endpoint stays locked rather
+  // than exposing the trading state to the public internet.
   const password = process.env.BREAKOUT_PASSWORD;
-  if (password) {
-    const auth = req.headers.get('authorization');
-    if (auth !== `Bearer ${password}`) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+  if (!password) return json({ error: 'Server auth not configured' }, 503);
+
+  const auth = req.headers.get('authorization') || '';
+  if (!safeEqual(auth, `Bearer ${password}`)) {
+    return json({ error: 'Unauthorized' }, 401);
   }
 
-  const redis = new Redis({
-    url: process.env.KV_REST_API_URL || '',
-    token: process.env.KV_REST_API_TOKEN || '',
-  });
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return json({ error: 'Storage not configured' }, 503);
+
+  const redis = new Redis({ url, token });
 
   if (req.method === 'GET') {
     const data = await redis.get(KEY);
-    return new Response(JSON.stringify(data || null), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json(data || null);
   }
 
   if (req.method === 'PUT') {
-    const body = await req.json();
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: 'Invalid JSON' }, 400);
+    }
+    if (body === null || typeof body !== 'object') {
+      return json({ error: 'Invalid payload' }, 400);
+    }
     await redis.set(KEY, JSON.stringify(body));
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json({ ok: true });
   }
 
-  return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-    status: 405,
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return json({ error: 'Method not allowed' }, 405);
 }
 
 export const config = { runtime: 'edge' };

@@ -4,6 +4,14 @@ import { startPolling, stopPolling, getState } from './state.js';
 import { checkAlerts, cleanFiredSet } from './alerts.js';
 import { sendTelegram } from './telegram.js';
 
+// Log unexpected failures instead of dying silently; systemd restarts us.
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] Unhandled rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[main] Uncaught exception:', err);
+});
+
 // Validate env
 const required = ['BREAKOUT_API_URL', 'BREAKOUT_PASSWORD', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
 for (const key of required) {

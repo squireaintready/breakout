@@ -1,9 +1,24 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 
+// Defined at module scope so it keeps a stable identity across renders.
+// (Declaring it inside Settings would remount the <input> on every keystroke,
+//  making the field lose focus after each character.)
+function Field({ label, value, onChange, type = 'number', step }: {
+  label: string; value: number | string; onChange: (v: number) => void; type?: string; step?: string;
+}) {
+  return (
+    <div>
+      <label className="text-xs text-slate-400">{label}</label>
+      <input type={type} value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        step={step}
+        className="w-full bg-slate-700 rounded px-2 py-1.5 text-sm font-mono" />
+    </div>
+  );
+}
+
 export default function Settings() {
-  const { settings, updateSettings, resetAccount, balance, highWaterMark, dayStartBalance, realizedPnl, positions, trades, equityHistory } = useStore();
-  const store = useStore();
+  const { settings, updateSettings, resetAccount, importData, balance, highWaterMark, dayStartBalance, realizedPnl, positions, trades, equityHistory } = useStore();
   const [importText, setImportText] = useState('');
 
   const handleExport = () => {
@@ -23,24 +38,13 @@ export default function Settings() {
   const handleImport = () => {
     try {
       const data = JSON.parse(importText);
-      store.importData(data);
+      importData(data);
       setImportText('');
       alert('Data imported successfully');
     } catch {
       alert('Invalid JSON');
     }
   };
-
-  const Field = ({ label, value, onChange, type = 'number', step }: {
-    label: string; value: number | string; onChange: (v: number) => void; type?: string; step?: string;
-  }) => (
-    <div>
-      <label className="text-xs text-slate-400">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        step={step}
-        className="w-full bg-slate-700 rounded px-2 py-1.5 text-sm font-mono" />
-    </div>
-  );
 
   return (
     <div className="space-y-4">
