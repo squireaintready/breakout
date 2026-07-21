@@ -13,6 +13,22 @@ export const DEFAULT_SETTINGS = {
 
 export const BTC_ETH_ASSETS = ['BTC', 'ETH'];
 
+// Multiple independent datasets ("accounts") in one deployment. Each account is
+// its own isolated state (own localStorage + own cloud key), gated by the same
+// shared password. The default account keeps the legacy un-suffixed storage keys
+// so existing data is preserved; see src/utils/account.ts and api/state.ts.
+export interface AccountInfo {
+  id: string;
+  label: string;
+}
+
+export const ACCOUNTS: AccountInfo[] = [
+  { id: 'main', label: 'Account 1' },
+  { id: 'second', label: 'Account 2' },
+];
+
+export const DEFAULT_ACCOUNT_ID = 'main';
+
 export const SUPPORTED_ASSETS = [
   'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'AVAX', 'DOT', 'LINK',
   'MATIC', 'DOGE', 'ATOM', 'UNI', 'LTC', 'NEAR', 'APT',

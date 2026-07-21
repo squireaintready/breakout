@@ -6,13 +6,15 @@ journal with performance stats, and fires price / P&L alerts to the browser and
 Telegram. State lives in the browser and syncs to a small cloud backend so it
 follows you across devices.
 
-> Personal, single-user tool. Access is gated by one shared password; it is not
-> designed for multi-tenant use.
+> Personal, single-user tool. Access is gated by one shared password. It supports
+> multiple independent **accounts** (separate datasets) behind that one password,
+> but it is not a multi-tenant / multi-user system.
 
 ## Features
 
 - **Live prices** — Kraken WebSocket v2 ticker feed for 70+ assets, batched for smooth rendering.
-- **Position sizer** — risk-% and leverage-based sizing with stop distance, liquidation estimate, fees, and correlation warnings.
+- **Position sizer** — risk-% and leverage-based sizing with stop distance, fees, and correlation warnings.
+- **Multiple accounts** — switch between independent datasets (each with its own balance, positions, journal, and alerts) from the header; one shared login, separate cloud keys per account.
 - **Drawdown guardrails** — daily soft/hard and total drawdown tracking with color-coded warnings and "what-if all stops hit" projections.
 - **Open positions** — live P&L, editable SL/TP, auto-close on stop-loss with undo, and aggregate margin/exposure stats.
 - **Alerts** — price and P&L alerts with crossover arming, cooldowns, persistence, and Telegram delivery.
@@ -84,11 +86,16 @@ npm run build
 npm start
 ```
 
+To watch multiple accounts, set `BREAKOUT_ACCOUNTS` (comma-separated `id` or
+`id:Label` entries, e.g. `main:Account 1,second:Account 2`); the label appears
+in each Telegram alert. The account ids must match the app's (`src/utils/constants.ts`).
+Omit it to watch the single default account.
+
 ## Security notes
 
 - API endpoints **fail closed**: with no `BREAKOUT_PASSWORD` configured they return `503` rather than serving/accepting data.
 - The shared secret is compared in constant time; all traffic is served over HTTPS.
-- Trading data is stored under a single KV key and is only as private as the shared password — treat it accordingly.
+- Trading data is stored under a per-account KV key and is only as private as the shared password — treat it accordingly.
 
 ## Author
 

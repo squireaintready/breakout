@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import AccountSwitcher from './AccountSwitcher';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◉' },
@@ -22,6 +23,7 @@ export default function Layout({ activeTab, onTabChange, children, syncing }: Pr
       <header className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-bold tracking-tight">Breakout</h1>
+          <AccountSwitcher />
           {syncing && <span className="text-xs text-blue-400 animate-pulse">syncing...</span>}
         </div>
         <div className="hidden sm:flex gap-1">

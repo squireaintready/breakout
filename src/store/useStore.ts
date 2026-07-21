@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_SETTINGS } from '../utils/constants';
+import { getAccountId, storeName } from '../utils/account';
 import { shouldResetDaily } from '../utils/drawdown';
 
 export interface Position {
@@ -461,7 +462,7 @@ export const useStore = create<StoreState>()(
         try {
           set({ _syncing: true });
           const pw = localStorage.getItem('breakout-password') || '';
-          const res = await fetch('/api/state', {
+          const res = await fetch(`/api/state?account=${encodeURIComponent(getAccountId())}`, {
             headers: pw ? { Authorization: `Bearer ${pw}` } : {},
           });
           if (!res.ok) throw new Error('fetch failed');
@@ -489,7 +490,7 @@ export const useStore = create<StoreState>()(
           const pw = localStorage.getItem('breakout-password') || '';
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (pw) headers['Authorization'] = `Bearer ${pw}`;
-          const res = await fetch('/api/state', {
+          const res = await fetch(`/api/state?account=${encodeURIComponent(getAccountId())}`, {
             method: 'PUT',
             headers,
             body: JSON.stringify(snap),
@@ -504,7 +505,7 @@ export const useStore = create<StoreState>()(
       },
     }),
     {
-      name: 'breakout-store',
+      name: storeName(),
       partialize: (state) => {
         const snap: Record<string, unknown> = {};
         for (const key of DATA_KEYS) {

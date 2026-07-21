@@ -20,14 +20,13 @@ export interface SizingResult {
   dollarRisk: number;
   notionalValue: number;
   leverageUsed: number;
-  estimatedLiquidationPrice: number;
   entryFee: number;
   exitFee: number;
   totalFees: number;
 }
 
 export function calculatePositionSize(input: SizingInput): SizingResult {
-  const { asset, entryPrice, stopLoss, riskPct, balance, btcEthLeverage, altLeverage, side, tradingFeePct } = input;
+  const { asset, entryPrice, stopLoss, riskPct, balance, btcEthLeverage, altLeverage, tradingFeePct } = input;
   const maxLeverage = BTC_ETH_ASSETS.includes(asset) ? btcEthLeverage : altLeverage;
 
   const stopDistancePct = Math.abs(entryPrice - stopLoss) / entryPrice * 100;
@@ -49,13 +48,6 @@ export function calculatePositionSize(input: SizingInput): SizingResult {
   const exitFee = recommendedSize * (tradingFeePct / 100);
   const totalFees = entryFee + exitFee;
 
-  // Estimated liquidation: assume 100% margin loss
-  // For long: liq = entry * (1 - 1/leverage)
-  // For short: liq = entry * (1 + 1/leverage)
-  const estimatedLiquidationPrice = side === 'long'
-    ? entryPrice * (1 - 1 / Math.max(leverageUsed, 1))
-    : entryPrice * (1 + 1 / Math.max(leverageUsed, 1));
-
   return {
     stopDistancePct,
     sizeFromRisk,
@@ -64,7 +56,6 @@ export function calculatePositionSize(input: SizingInput): SizingResult {
     dollarRisk: actualDollarRisk,
     notionalValue: recommendedSize,
     leverageUsed,
-    estimatedLiquidationPrice,
     entryFee,
     exitFee,
     totalFees,

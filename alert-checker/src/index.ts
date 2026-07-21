@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { connect, disconnect, prices, onPrice } from './kraken.js';
-import { startPolling, stopPolling, getState } from './state.js';
+import { startPolling, stopPolling, getStates, getAccounts } from './state.js';
 import { checkAlerts, cleanFiredSet } from './alerts.js';
 import { sendTelegram } from './telegram.js';
 
@@ -28,20 +28,23 @@ function throttledCheck(): void {
   if (now - lastCheck < 500) return;
   lastCheck = now;
 
-  const state = getState();
-  if (!state) return;
-
-  cleanFiredSet(state);
-  checkAlerts(prices, state);
+  const states = getStates();
+  for (const account of getAccounts()) {
+    const state = states.get(account.id);
+    if (!state) continue;
+    cleanFiredSet(account.id, state);
+    checkAlerts(prices, account, state);
+  }
 }
 
 // Start
-console.log('[main] Starting alert checker...');
+const accountLabels = getAccounts().map(a => a.label).join(', ');
+console.log(`[main] Starting alert checker... (accounts: ${accountLabels})`);
 startPolling(10_000);
 connect();
 onPrice(throttledCheck);
 
-sendTelegram('<b>🟢 Alert checker online</b>');
+sendTelegram(`<b>🟢 Alert checker online</b>\nWatching: ${accountLabels}`);
 
 // Graceful shutdown
 function shutdown(): void {

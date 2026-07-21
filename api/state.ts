@@ -1,6 +1,16 @@
 import { Redis } from '@upstash/redis';
 
-const KEY = 'breakout-state';
+const DEFAULT_ACCOUNT = 'main';
+
+// Resolve which dataset this request targets. Accounts are namespaces, not
+// security boundaries — the shared password already gates all access — so we
+// only sanitize the id to keep the Redis key well-formed. The default account
+// keeps the legacy un-suffixed key so pre-existing data is preserved.
+function stateKey(req: Request): string {
+  const raw = new URL(req.url).searchParams.get('account') || DEFAULT_ACCOUNT;
+  const account = /^[a-z0-9_-]{1,32}$/.test(raw) ? raw : DEFAULT_ACCOUNT;
+  return account === DEFAULT_ACCOUNT ? 'breakout-state' : `breakout-state:${account}`;
+}
 
 // Constant-time comparison so the shared secret can't be recovered via timing.
 function safeEqual(a: string, b: string): boolean {
@@ -35,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
   const redis = new Redis({ url, token });
 
   if (req.method === 'GET') {
-    const data = await redis.get(KEY);
+    const data = await redis.get(stateKey(req));
     return json(data || null);
   }
 
@@ -49,7 +59,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (body === null || typeof body !== 'object') {
       return json({ error: 'Invalid payload' }, 400);
     }
-    await redis.set(KEY, JSON.stringify(body));
+    await redis.set(stateKey(req), JSON.stringify(body));
     return json({ ok: true });
   }
 

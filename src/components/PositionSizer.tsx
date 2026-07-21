@@ -178,8 +178,6 @@ export default function PositionSizer({ prices }: Props) {
             <div className="font-mono text-right">${result.dollarRisk.toFixed(2)}</div>
             <div className="text-slate-400">Leverage Used</div>
             <div className="font-mono text-right">{result.leverageUsed.toFixed(2)}x</div>
-            <div className="text-slate-400">Est. Liquidation</div>
-            <div className="font-mono text-right">${result.estimatedLiquidationPrice.toFixed(2)}</div>
             <div className="text-slate-400">Entry Fee</div>
             <div className="font-mono text-right">${result.entryFee.toFixed(2)}</div>
             <div className="text-slate-400">Exit Fee (est.)</div>

@@ -1,7 +1,9 @@
-import type { AppState, Position } from './types.js';
+import type { AppState, Position, AccountRef } from './types.js';
 import { sendTelegram } from './telegram.js';
 import { pushState } from './state.js';
 
+// De-dupe/cooldown bookkeeping is shared across all watched accounts, so every
+// key is namespaced with `${accountId}::` to keep accounts fully isolated.
 const firedSet = new Set<string>();
 const cooldownMap = new Map<string, number>();
 const armedSet = new Set<string>();
@@ -38,35 +40,40 @@ function formatPositions(asset: string, positions: Position[], prices: Map<strin
   return `\n\n<b>Open ${asset} positions:</b>\n${lines.join('\n')}`;
 }
 
-function notify(title: string, body: string, positionInfo = '', meta: { createdAt?: number } = {}): void {
+function notify(label: string, title: string, body: string, positionInfo = '', meta: { createdAt?: number } = {}): void {
   const now = fmtTs(Date.now());
   const created = meta.createdAt ? fmtTs(meta.createdAt) : '';
   const timeInfo = `\n<i>Triggered: ${now}${created ? ` | Set: ${created}` : ''}</i>`;
-  const message = `<b>${title}</b>\n${body}${timeInfo}${positionInfo}`;
-  console.log(`[alert] ${title} — ${body}`);
+  const message = `<b>[${label}] ${title}</b>\n${body}${timeInfo}${positionInfo}`;
+  console.log(`[alert] [${label}] ${title} — ${body}`);
   sendTelegram(message);
 }
 
 // Does the entity a cooldown/armed key refers to still exist in state?
+// `key` here is the account-local key (prefix already stripped).
 function keyStillRelevant(key: string, state: AppState): boolean {
   if (key.startsWith('pnl-')) return state.pnlAlerts.some(a => a.id === key.slice(4));
   if (key.startsWith('sl-') || key.startsWith('tp-')) return state.positions.some(p => p.id === key.slice(3));
   return state.priceAlerts.some(a => a.id === key);
 }
 
-export function cleanFiredSet(state: AppState): void {
+export function cleanFiredSet(accountId: string, state: AppState): void {
+  const prefix = `${accountId}::`;
+
   // Remove fired entries for alerts that no longer exist or were re-armed
   for (const id of firedSet) {
-    if (id.startsWith('pnl-')) {
-      const alertId = id.slice(4);
+    if (!id.startsWith(prefix)) continue;
+    const localId = id.slice(prefix.length);
+    if (localId.startsWith('pnl-')) {
+      const alertId = localId.slice(4);
       const alert = state.pnlAlerts.find(a => a.id === alertId);
       if (!alert || !alert.triggered) firedSet.delete(id);
-    } else if (id.startsWith('sl-') || id.startsWith('tp-')) {
-      const posId = id.slice(3);
+    } else if (localId.startsWith('sl-') || localId.startsWith('tp-')) {
+      const posId = localId.slice(3);
       if (!state.positions.find(p => p.id === posId)) firedSet.delete(id);
     } else {
       // Price alert ID
-      const alert = state.priceAlerts.find(a => a.id === id);
+      const alert = state.priceAlerts.find(a => a.id === localId);
       if (!alert || !alert.triggered) firedSet.delete(id);
     }
   }
@@ -74,42 +81,47 @@ export function cleanFiredSet(state: AppState): void {
   // Prune cooldown/armed bookkeeping for deleted alerts/positions so these
   // maps don't grow unbounded and stale entries can't skew later checks.
   for (const key of cooldownMap.keys()) {
-    if (!keyStillRelevant(key, state)) cooldownMap.delete(key);
+    if (!key.startsWith(prefix)) continue;
+    if (!keyStillRelevant(key.slice(prefix.length), state)) cooldownMap.delete(key);
   }
   for (const key of armedSet) {
-    if (!keyStillRelevant(key, state)) armedSet.delete(key);
+    if (!key.startsWith(prefix)) continue;
+    if (!keyStillRelevant(key.slice(prefix.length), state)) armedSet.delete(key);
   }
 }
 
-export function checkAlerts(prices: Map<string, number>, state: AppState): void {
+export function checkAlerts(prices: Map<string, number>, account: AccountRef, state: AppState): void {
+  const P = (k: string) => `${account.id}::${k}`;
   let stateModified = false;
 
   // 1. Price alerts (crossover: must see safe side before firing)
   for (const alert of state.priceAlerts) {
     if (alert.triggered) continue;
-    if (firedSet.has(alert.id)) continue;
+    const aKey = P(alert.id);
+    if (firedSet.has(aKey)) continue;
     const price = prices.get(alert.asset);
     if (price == null) continue;
 
     const hit = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
     if (!hit) {
-      armedSet.add(alert.id);
+      armedSet.add(aKey);
       continue;
     }
-    if (!armedSet.has(alert.id)) continue;
-    const lastFired = cooldownMap.get(alert.id) ?? 0;
+    if (!armedSet.has(aKey)) continue;
+    const lastFired = cooldownMap.get(aKey) ?? 0;
     if (Date.now() - lastFired < COOLDOWN_MS) continue;
-    cooldownMap.set(alert.id, Date.now());
+    cooldownMap.set(aKey, Date.now());
     if (!alert.persistent) {
-      firedSet.add(alert.id);
-      armedSet.delete(alert.id);
+      firedSet.add(aKey);
+      armedSet.delete(aKey);
       alert.triggered = true;
       alert.triggeredAt = Date.now();
       stateModified = true;
     } else {
-      armedSet.delete(alert.id);
+      armedSet.delete(aKey);
     }
     notify(
+      account.label,
       `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
       `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + esc(alert.note) : ''}`,
       formatPositions(alert.asset, state.positions, prices),
@@ -124,13 +136,14 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     const dir = pos.side === 'long' ? 1 : -1;
 
     if (pos.stopLoss != null) {
-      const slKey = `sl-${pos.id}`;
+      const slKey = P(`sl-${pos.id}`);
       const slHit = dir === 1 ? price <= pos.stopLoss : price >= pos.stopLoss;
       const lastFired = cooldownMap.get(slKey) ?? 0;
       if (!firedSet.has(slKey) && slHit && Date.now() - lastFired >= COOLDOWN_MS) {
         firedSet.add(slKey);
         cooldownMap.set(slKey, Date.now());
         notify(
+          account.label,
           `STOP LOSS — ${pos.asset}`,
           `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
           formatPositions(pos.asset, state.positions, prices),
@@ -139,13 +152,14 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     }
 
     if (pos.takeProfit != null) {
-      const tpKey = `tp-${pos.id}`;
+      const tpKey = P(`tp-${pos.id}`);
       const tpHit = dir === 1 ? price >= pos.takeProfit : price <= pos.takeProfit;
       const lastFired = cooldownMap.get(tpKey) ?? 0;
       if (!firedSet.has(tpKey) && tpHit && Date.now() - lastFired >= COOLDOWN_MS) {
         firedSet.add(tpKey);
         cooldownMap.set(tpKey, Date.now());
         notify(
+          account.label,
           `TAKE PROFIT — ${pos.asset}`,
           `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
           formatPositions(pos.asset, state.positions, prices),
@@ -158,7 +172,7 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
   //    load. P&L is summed over positions that have a price (an un-mapped or
   //    delisted asset is skipped rather than disabling every P&L alert).
   if (Date.now() - startTime < 10000) {
-    if (stateModified) pushState(state);
+    if (stateModified) pushState(account.id, state);
     return;
   }
 
@@ -170,7 +184,7 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
   }, 0);
 
   for (const alert of state.pnlAlerts) {
-    const pnlKey = `pnl-${alert.id}`;
+    const pnlKey = P(`pnl-${alert.id}`);
     const met = alert.direction === 'above' ? totalPnl >= alert.targetPnl : totalPnl <= alert.targetPnl;
 
     if (!alert.triggered && !firedSet.has(pnlKey)) {
@@ -191,6 +205,7 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
         }
         const dir = alert.direction === 'above' ? '↑' : '↓';
         notify(
+          account.label,
           `P&amp;L ${dir} $${alert.targetPnl}`,
           `Unrealized P&amp;L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + esc(alert.note) : ''}`,
           '',
@@ -207,5 +222,5 @@ export function checkAlerts(prices: Map<string, number>, state: AppState): void 
     }
   }
 
-  if (stateModified) pushState(state);
+  if (stateModified) pushState(account.id, state);
 }

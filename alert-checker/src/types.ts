@@ -66,6 +66,13 @@ export interface EquitySnapshot {
   drawdownPct: number;
 }
 
+// One dataset the worker watches. `id` selects the Redis key via /api/state,
+// `label` is shown in Telegram alerts so you can tell the accounts apart.
+export interface AccountRef {
+  id: string;
+  label: string;
+}
+
 export interface AppState {
   balance: number;
   highWaterMark: number;

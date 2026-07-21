@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import type { Position } from '../store/useStore';
 import type { PriceMap } from './useKrakenPrices';
+import { getAccount } from '../utils/account';
 
 function playAlertSound() {
   try {
@@ -64,7 +65,7 @@ function notify(title: string, body: string, positionInfo: string = '', meta: { 
   const now = fmtTs(Date.now());
   const created = meta.createdAt ? fmtTs(meta.createdAt) : '';
   const timeInfo = `\n<i>Triggered: ${now}${created ? ` | Set: ${created}` : ''}</i>`;
-  sendTelegram(`<b>${title}</b>\n${body}${timeInfo}${positionInfo}`);
+  sendTelegram(`<b>[${getAccount().label}] ${title}</b>\n${body}${timeInfo}${positionInfo}`);
 }
 
 const COOLDOWN_MS = 120_000;
