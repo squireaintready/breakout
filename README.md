@@ -87,7 +87,8 @@ npm start
 ```
 
 To watch multiple accounts, set `BREAKOUT_ACCOUNTS` (comma-separated `id` or
-`id:Label` entries, e.g. `main:Account 1,second:Account 2`); the label appears
+`id:Label` entries, e.g.
+`main:100k,second:25k A,third:25k B,fourth:25k C,fifth:25k D`); the label appears
 in each Telegram alert. The account ids must match the app's (`src/utils/constants.ts`).
 Omit it to watch the single default account.
 

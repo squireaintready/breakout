@@ -29,3 +29,6 @@ dist-ssr
 .vercel
 .claude
 .gstack/
+
+# Account snapshots: real balances, positions and stops. This repo is public.
+seed/

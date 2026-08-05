@@ -1,7 +1,7 @@
 export const DEFAULT_SETTINGS = {
   startingBalance: 100000,
   dailyHardDrawdownPct: 3,
-  totalDrawdownPct: 6,
+  totalDrawdownPct: 3,
   dailySoftDrawdownPct: 1,
   btcEthLeverage: 5,
   altLeverage: 2,
@@ -20,11 +20,20 @@ export const BTC_ETH_ASSETS = ['BTC', 'ETH'];
 export interface AccountInfo {
   id: string;
   label: string;
+  // Account size. Seeds this account's balance/HWM/settings.startingBalance the
+  // first time its store is created; afterwards the persisted per-account
+  // setting wins, so editing it in Settings sticks. The drawdown/leverage rules
+  // stay in DEFAULT_SETTINGS because they are percentages — identical across
+  // every account size.
+  startingBalance: number;
 }
 
 export const ACCOUNTS: AccountInfo[] = [
-  { id: 'main', label: 'Account 1' },
-  { id: 'second', label: 'Account 2' },
+  { id: 'main', label: '100k', startingBalance: 100000 },
+  { id: 'second', label: '25k A', startingBalance: 25000 },
+  { id: 'third', label: '25k B', startingBalance: 25000 },
+  { id: 'fourth', label: '25k C', startingBalance: 25000 },
+  { id: 'fifth', label: '25k D', startingBalance: 25000 },
 ];
 
 export const DEFAULT_ACCOUNT_ID = 'main';

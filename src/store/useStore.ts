@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_SETTINGS } from '../utils/constants';
-import { getAccountId, storeName } from '../utils/account';
+import { getAccount, getAccountId, storeName } from '../utils/account';
 import { shouldResetDaily } from '../utils/drawdown';
 
 export interface Position {
@@ -147,12 +147,17 @@ function debouncedPush(fn: () => void) {
   pushTimer = setTimeout(fn, 1500);
 }
 
+// Size of the account being viewed. Resolved once at module load (same as
+// `storeName()`), so a fresh account starts at its own declared size instead of
+// the 100k default. Accounts with persisted state rehydrate over this.
+const ACCOUNT_SIZE = getAccount().startingBalance;
+
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      balance: DEFAULT_SETTINGS.startingBalance,
-      highWaterMark: DEFAULT_SETTINGS.startingBalance,
-      dayStartBalance: DEFAULT_SETTINGS.startingBalance,
+      balance: ACCOUNT_SIZE,
+      highWaterMark: ACCOUNT_SIZE,
+      dayStartBalance: ACCOUNT_SIZE,
       lastDailyReset: Date.now(),
       realizedPnl: 0,
       positions: [],
@@ -160,7 +165,7 @@ export const useStore = create<StoreState>()(
       equityHistory: [],
       priceAlerts: [],
       pnlAlerts: [],
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...DEFAULT_SETTINGS, startingBalance: ACCOUNT_SIZE },
       _syncing: false,
       _lastCloud: 0,
 

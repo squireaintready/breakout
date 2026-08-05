@@ -5,7 +5,7 @@ const PASSWORD = process.env.BREAKOUT_PASSWORD || '';
 const DEFAULT_ACCOUNT = 'main';
 
 // Accounts to watch, from BREAKOUT_ACCOUNTS (comma-separated). Each entry is
-// `id` or `id:Label` — e.g. "main:Account 1,second:Account 2". Defaults to a
+// `id` or `id:Label` — e.g. "main:100k,second:25k A". Defaults to a
 // single default account, so an unconfigured worker behaves exactly as before.
 function parseAccounts(): AccountRef[] {
   const raw = (process.env.BREAKOUT_ACCOUNTS || DEFAULT_ACCOUNT)
