@@ -1,30 +1,33 @@
+import { useState } from 'react';
 import { ACCOUNTS } from '../utils/constants';
-import { getAccountId, setAccountId } from '../utils/account';
 import { useStore } from '../store/useStore';
 
-// Switching accounts swaps the entire dataset. We flush any pending local edits
-// to the cloud first, then reload so the store re-hydrates from the newly
-// selected account's localStorage + cloud keys (both derived at module load).
+// Switching swaps the whole dataset in place — see `switchAccount` in the store.
+// It reads from localStorage first, so the new account paints immediately and
+// the cloud refresh lands behind it.
 export default function AccountSwitcher() {
-  const current = getAccountId();
+  const accountId = useStore(s => s.accountId);
+  const switchAccount = useStore(s => s.switchAccount);
+  const [busy, setBusy] = useState(false);
 
   const onChange = async (id: string) => {
-    if (id === current) return;
+    if (id === accountId || busy) return;
+    setBusy(true);
     try {
-      await useStore.getState().pushCloud();
-    } catch {
-      // Best-effort flush; local data is still safe in this account's storage.
+      await switchAccount(id);
+    } finally {
+      setBusy(false);
     }
-    setAccountId(id);
-    window.location.reload();
   };
 
   return (
     <select
-      value={current}
+      value={accountId}
+      disabled={busy}
       onChange={e => onChange(e.target.value)}
       aria-label="Account"
-      className="bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500"
+      aria-busy={busy}
+      className="bg-slate-800 border border-slate-700 rounded text-xs px-2 py-1 text-slate-200 focus:outline-none focus:border-blue-500 disabled:opacity-60"
     >
       {ACCOUNTS.map(a => (
         <option key={a.id} value={a.id}>{a.label}</option>

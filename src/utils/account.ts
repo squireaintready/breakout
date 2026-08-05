@@ -18,8 +18,7 @@ export function setAccountId(id: string): void {
   localStorage.setItem(ACCOUNT_KEY, id);
 }
 
-export function getAccount(): AccountInfo {
-  const id = getAccountId();
+export function getAccount(id: string = getAccountId()): AccountInfo {
   return ACCOUNTS.find(a => a.id === id) ?? ACCOUNTS[0];
 }
 

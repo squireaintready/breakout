@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_SETTINGS } from '../utils/constants';
-import { getAccount, getAccountId, storeName } from '../utils/account';
+import { ACCOUNTS, DEFAULT_SETTINGS } from '../utils/constants';
+import { getAccount, getAccountId, setAccountId, storeName } from '../utils/account';
 import { shouldResetDaily } from '../utils/drawdown';
 
 export interface Position {
@@ -82,6 +82,10 @@ const DATA_KEYS = [
 ] as const;
 
 export interface StoreState {
+  // Which account is being viewed. Mirrors the localStorage value so components
+  // re-render when it changes; deliberately outside DATA_KEYS, since it is
+  // global rather than part of any one account's dataset.
+  accountId: string;
   balance: number;
   highWaterMark: number;
   dayStartBalance: number;
@@ -124,8 +128,9 @@ export interface StoreState {
   rearmPnlAlert: (id: string, updates: Partial<Pick<PnlAlert, 'targetPnl' | 'direction'>>) => void;
   reopenTrade: (tradeId: string) => void;
   applySwapFees: () => void;
-  pullCloud: () => Promise<void>;
-  pushCloud: () => Promise<void>;
+  switchAccount: (id: string) => Promise<void>;
+  pullCloud: (accountId?: string) => Promise<void>;
+  pushCloud: (accountId?: string) => Promise<void>;
 }
 
 function getDataSnapshot(state: StoreState) {
@@ -136,36 +141,75 @@ function getDataSnapshot(state: StoreState) {
   return snap;
 }
 
-// Debounced push
+const PUSH_DEBOUNCE_MS = 1500;
+
+// Debounced push. The owning account is captured when the push is *scheduled*,
+// not when it fires — switching accounts inside the debounce window would
+// otherwise upload one account's data under another account's key.
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingPushAccount: string | undefined;
 // True while there are local changes not yet confirmed as saved to the cloud.
 // Guards pullCloud from overwriting unsynced local edits (e.g. on tab refocus).
 let hasUnsyncedChanges = false;
-function debouncedPush(fn: () => void) {
+
+function schedulePush() {
+  const account = getAccountId();
   hasUnsyncedChanges = true;
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(fn, 1500);
+  pendingPushAccount = account;
+  pushTimer = setTimeout(() => {
+    pushTimer = undefined;
+    pendingPushAccount = undefined;
+    void useStore.getState().pushCloud(account);
+  }, PUSH_DEBOUNCE_MS);
 }
 
-// Size of the account being viewed. Resolved once at module load (same as
-// `storeName()`), so a fresh account starts at its own declared size instead of
-// the 100k default. Accounts with persisted state rehydrate over this.
-const ACCOUNT_SIZE = getAccount().startingBalance;
+// Send a debounced edit immediately, to the account that made it. Called before
+// an account switch so pending work is neither lost nor misfiled.
+function flushPendingPush() {
+  if (pushTimer === undefined) return;
+  const account = pendingPushAccount;
+  clearTimeout(pushTimer);
+  pushTimer = undefined;
+  pendingPushAccount = undefined;
+  if (account) void useStore.getState().pushCloud(account);
+}
+
+function hasStoredState(name: string): boolean {
+  try {
+    return localStorage.getItem(name) !== null;
+  } catch {
+    return false;
+  }
+}
+
+// An untouched dataset at the given account's declared size, so a fresh account
+// starts at its own size instead of the 100k default. Also used to clear state
+// on an account switch: zustand's rehydrate() merges *over* current state and
+// leaves it alone when the target has nothing stored, so without this reset a
+// brand-new account would display the previous account's positions.
+function freshAccountState(id: string) {
+  const size = getAccount(id).startingBalance;
+  return {
+    balance: size,
+    highWaterMark: size,
+    dayStartBalance: size,
+    lastDailyReset: Date.now(),
+    realizedPnl: 0,
+    positions: [] as Position[],
+    trades: [] as Trade[],
+    equityHistory: [] as EquitySnapshot[],
+    priceAlerts: [] as PriceAlert[],
+    pnlAlerts: [] as PnlAlert[],
+    settings: { ...DEFAULT_SETTINGS, startingBalance: size },
+  };
+}
 
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      balance: ACCOUNT_SIZE,
-      highWaterMark: ACCOUNT_SIZE,
-      dayStartBalance: ACCOUNT_SIZE,
-      lastDailyReset: Date.now(),
-      realizedPnl: 0,
-      positions: [],
-      trades: [],
-      equityHistory: [],
-      priceAlerts: [],
-      pnlAlerts: [],
-      settings: { ...DEFAULT_SETTINGS, startingBalance: ACCOUNT_SIZE },
+      accountId: getAccountId(),
+      ...freshAccountState(getAccountId()),
       _syncing: false,
       _lastCloud: 0,
 
@@ -176,7 +220,7 @@ export const useStore = create<StoreState>()(
           positions: [...state.positions, { ...pos, id: crypto.randomUUID(), openedAt: Date.now() }],
           balance: state.balance - entryFee,
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       closePosition: (id, exitPrice, notes = '', tags = []) => {
@@ -216,31 +260,31 @@ export const useStore = create<StoreState>()(
           highWaterMark: newHWM,
           realizedPnl: state.realizedPnl + trade.pnl,
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       updatePositionStop: (id, stopLoss) => {
         set(state => ({
           positions: state.positions.map(p => p.id === id ? { ...p, stopLoss } : p),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       updatePositionTP: (id, takeProfit) => {
         set(state => ({
           positions: state.positions.map(p => p.id === id ? { ...p, takeProfit } : p),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       updateSettings: (s) => {
         set(state => ({ settings: { ...state.settings, ...s } }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       setBalance: (b) => {
         set({ balance: b, highWaterMark: Math.max(get().highWaterMark, b), dayStartBalance: b });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       checkDailyReset: () => {
@@ -251,7 +295,7 @@ export const useStore = create<StoreState>()(
             lastDailyReset: Date.now(),
           });
           get().addEquitySnapshot();
-          debouncedPush(() => get().pushCloud());
+          schedulePush();
         }
       },
 
@@ -269,7 +313,7 @@ export const useStore = create<StoreState>()(
 
       importData: (data) => {
         set({ ...data } as Partial<StoreState>);
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       resetAccount: () => {
@@ -291,7 +335,7 @@ export const useStore = create<StoreState>()(
           priceAlerts: [],
           pnlAlerts: [],
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       editTrade: (id, updates) => {
@@ -317,7 +361,7 @@ export const useStore = create<StoreState>()(
             trades: state.trades.map(t => t.id === id ? { ...t, ...updates } : t),
           });
         }
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       deleteTrade: (id) => {
@@ -329,7 +373,7 @@ export const useStore = create<StoreState>()(
           realizedPnl: state.realizedPnl - trade.pnl,
           balance: state.balance - trade.pnl,
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       deletePosition: (id) => {
@@ -342,90 +386,90 @@ export const useStore = create<StoreState>()(
           positions: state.positions.filter(p => p.id !== id),
           balance: state.balance + entryFee,
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       addPriceAlert: (alert) => {
         set(state => ({
           priceAlerts: [...state.priceAlerts, { ...alert, id: crypto.randomUUID(), triggered: false, createdAt: Date.now() }],
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       deletePriceAlert: (id) => {
         set(state => ({ priceAlerts: state.priceAlerts.filter(a => a.id !== id) }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       editPriceAlert: (id, updates) => {
         set(state => ({
           priceAlerts: state.priceAlerts.map(a => a.id === id ? { ...a, ...updates } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       rearmAlert: (id, updates) => {
         set(state => ({
           priceAlerts: state.priceAlerts.map(a => a.id === id ? { ...a, ...updates, triggered: false, triggeredAt: undefined, createdAt: Date.now() } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       markAlertTriggered: (id) => {
         set(state => ({
           priceAlerts: state.priceAlerts.map(a => a.id === id ? { ...a, triggered: true, triggeredAt: Date.now() } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       dismissAlert: (id) => {
         set(state => ({ priceAlerts: state.priceAlerts.filter(a => a.id !== id) }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       addPnlAlert: (alert) => {
         set(state => ({
           pnlAlerts: [...state.pnlAlerts, { ...alert, id: crypto.randomUUID(), triggered: false, createdAt: Date.now() }],
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       deletePnlAlert: (id) => {
         set(state => ({ pnlAlerts: state.pnlAlerts.filter(a => a.id !== id) }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       editPnlAlert: (id, updates) => {
         set(state => ({
           pnlAlerts: state.pnlAlerts.map(a => a.id === id ? { ...a, ...updates } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       markPnlAlertTriggered: (id) => {
         set(state => ({
           pnlAlerts: state.pnlAlerts.map(a => a.id === id ? { ...a, triggered: true, triggeredAt: Date.now() } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       resetPnlAlert: (id) => {
         set(state => ({
           pnlAlerts: state.pnlAlerts.map(a => a.id === id ? { ...a, triggered: false, triggeredAt: undefined } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       dismissPnlAlert: (id) => {
         set(state => ({ pnlAlerts: state.pnlAlerts.filter(a => a.id !== id) }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       rearmPnlAlert: (id, updates) => {
         set(state => ({
           pnlAlerts: state.pnlAlerts.map(a => a.id === id ? { ...a, ...updates, triggered: false, triggeredAt: undefined, createdAt: Date.now() } : a),
         }));
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       reopenTrade: (tradeId) => {
@@ -450,7 +494,7 @@ export const useStore = create<StoreState>()(
           balance: state.balance - trade.pnl - entryFee,
           realizedPnl: state.realizedPnl - trade.pnl,
         });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
       applySwapFees: () => {
@@ -460,18 +504,54 @@ export const useStore = create<StoreState>()(
           return sum + pos.size * (state.settings.dailySwapFeePct / 100);
         }, 0);
         set({ balance: state.balance - totalSwapFee });
-        debouncedPush(() => get().pushCloud());
+        schedulePush();
       },
 
-      pullCloud: async () => {
+      // Swap the whole dataset in place — no page reload. localStorage is
+      // synchronous, so the new account paints immediately; the cloud refresh
+      // happens behind it and the Kraken socket is never dropped.
+      switchAccount: async (id) => {
+        if (id === getAccountId() || !ACCOUNTS.some(a => a.id === id)) return;
+
+        // Upload the outgoing account's debounced edits while its data is still
+        // in memory. The push is pinned to that account's key.
+        flushPendingPush();
+
+        // Repoint the app. `accountId` is excluded from partialize, so this set
+        // rewrites the outgoing account's storage with identical data.
+        setAccountId(id);
+        hasUnsyncedChanges = false;
+        set({ accountId: id });
+
+        // Redirect persistence at the new key *before* touching data, so
+        // nothing below can overwrite the outgoing account's storage.
+        useStore.persist.setOptions({ name: storeName(id) });
+
+        // rehydrate() merges over current state and does nothing when the target
+        // has nothing stored — so a never-used account must be reset explicitly
+        // or it would keep showing the previous account's positions.
+        if (hasStoredState(storeName(id))) {
+          await useStore.persist.rehydrate();
+        } else {
+          set(freshAccountState(id));
+        }
+
+        get().checkDailyReset();
+        void get().pullCloud(id);
+      },
+
+      pullCloud: async (accountId = getAccountId()) => {
         try {
           set({ _syncing: true });
           const pw = localStorage.getItem('breakout-password') || '';
-          const res = await fetch(`/api/state?account=${encodeURIComponent(getAccountId())}`, {
+          const res = await fetch(`/api/state?account=${encodeURIComponent(accountId)}`, {
             headers: pw ? { Authorization: `Bearer ${pw}` } : {},
           });
           if (!res.ok) throw new Error('fetch failed');
           const data = await res.json();
+          // The user may have switched accounts while this was in flight —
+          // applying it now would write one account's data over another's.
+          if (getAccountId() !== accountId) return;
           // Last-write-wins sync. Skip applying cloud state if this tab has
           // local edits still waiting to upload, so a refetch doesn't clobber
           // unsynced work.
@@ -485,22 +565,26 @@ export const useStore = create<StoreState>()(
         } catch {
           // Silently fail — localStorage is the fallback
         } finally {
-          set({ _syncing: false, _lastCloud: Date.now() });
+          // Only clear the indicator if this is still the account on screen,
+          // so a superseded pull doesn't stop a newer one's spinner.
+          if (getAccountId() === accountId) {
+            set({ _syncing: false, _lastCloud: Date.now() });
+          }
         }
       },
 
-      pushCloud: async () => {
+      pushCloud: async (accountId = getAccountId()) => {
         try {
           const snap = getDataSnapshot(get());
           const pw = localStorage.getItem('breakout-password') || '';
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (pw) headers['Authorization'] = `Bearer ${pw}`;
-          const res = await fetch(`/api/state?account=${encodeURIComponent(getAccountId())}`, {
+          const res = await fetch(`/api/state?account=${encodeURIComponent(accountId)}`, {
             method: 'PUT',
             headers,
             body: JSON.stringify(snap),
           });
-          if (res.ok) {
+          if (res.ok && getAccountId() === accountId) {
             hasUnsyncedChanges = false;
             set({ _lastCloud: Date.now() });
           }
