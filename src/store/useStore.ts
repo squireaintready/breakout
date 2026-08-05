@@ -82,9 +82,11 @@ const DATA_KEYS = [
 ] as const;
 
 export interface StoreState {
-  // Which account is being viewed. Mirrors the localStorage value so components
-  // re-render when it changes; deliberately outside DATA_KEYS, since it is
-  // global rather than part of any one account's dataset.
+  // Which account's dataset this store currently holds. Seeded from
+  // localStorage, but it is this value — not the localStorage pointer, which is
+  // shared between tabs — that identifies the data in memory, so every cloud
+  // read/write is keyed off it. Deliberately outside DATA_KEYS: it is global
+  // rather than part of any one account's dataset.
   accountId: string;
   balance: number;
   highWaterMark: number;
@@ -153,7 +155,10 @@ let pendingPushAccount: string | undefined;
 let hasUnsyncedChanges = false;
 
 function schedulePush() {
-  const account = getAccountId();
+  // Identify the edit by the dataset held in memory, not by the localStorage
+  // pointer — that pointer is shared between tabs, so a switch in another tab
+  // would otherwise make this tab upload its data under the new account's key.
+  const account = useStore.getState().accountId;
   hasUnsyncedChanges = true;
   clearTimeout(pushTimer);
   pendingPushAccount = account;
@@ -511,7 +516,7 @@ export const useStore = create<StoreState>()(
       // synchronous, so the new account paints immediately; the cloud refresh
       // happens behind it and the Kraken socket is never dropped.
       switchAccount: async (id) => {
-        if (id === getAccountId() || !ACCOUNTS.some(a => a.id === id)) return;
+        if (id === get().accountId || !ACCOUNTS.some(a => a.id === id)) return;
 
         // Upload the outgoing account's debounced edits while its data is still
         // in memory. The push is pinned to that account's key.
@@ -540,7 +545,7 @@ export const useStore = create<StoreState>()(
         void get().pullCloud(id);
       },
 
-      pullCloud: async (accountId = getAccountId()) => {
+      pullCloud: async (accountId = get().accountId) => {
         try {
           set({ _syncing: true });
           const pw = localStorage.getItem('breakout-password') || '';
@@ -551,7 +556,7 @@ export const useStore = create<StoreState>()(
           const data = await res.json();
           // The user may have switched accounts while this was in flight —
           // applying it now would write one account's data over another's.
-          if (getAccountId() !== accountId) return;
+          if (get().accountId !== accountId) return;
           // Last-write-wins sync. Skip applying cloud state if this tab has
           // local edits still waiting to upload, so a refetch doesn't clobber
           // unsynced work.
@@ -567,13 +572,13 @@ export const useStore = create<StoreState>()(
         } finally {
           // Only clear the indicator if this is still the account on screen,
           // so a superseded pull doesn't stop a newer one's spinner.
-          if (getAccountId() === accountId) {
+          if (get().accountId === accountId) {
             set({ _syncing: false, _lastCloud: Date.now() });
           }
         }
       },
 
-      pushCloud: async (accountId = getAccountId()) => {
+      pushCloud: async (accountId = get().accountId) => {
         try {
           const snap = getDataSnapshot(get());
           const pw = localStorage.getItem('breakout-password') || '';
@@ -584,7 +589,7 @@ export const useStore = create<StoreState>()(
             headers,
             body: JSON.stringify(snap),
           });
-          if (res.ok && getAccountId() === accountId) {
+          if (res.ok && get().accountId === accountId) {
             hasUnsyncedChanges = false;
             set({ _lastCloud: Date.now() });
           }

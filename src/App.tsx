@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Fragment, Suspense } from 'react';
 import { useStore } from './store/useStore';
 import { useKrakenPrices } from './hooks/useKrakenPrices';
 import Layout, { type TabId } from './components/Layout';
@@ -66,7 +66,7 @@ export default function App() {
   const [unlocked, setUnlocked] = useState(() => !!localStorage.getItem('breakout-password'));
   const [tab, setTab] = useState<TabId>('dashboard');
   const [showTradeForm, setShowTradeForm] = useState(false);
-  const { settings, checkDailyReset, pullCloud, _syncing } = useStore();
+  const { accountId, settings, checkDailyReset, pullCloud, _syncing } = useStore();
 
   const assets = useMemo(() => [...SUPPORTED_ASSETS], []);
   const prices = useKrakenPrices(assets);
@@ -106,6 +106,12 @@ export default function App() {
     <Layout activeTab={tab} onTabChange={setTab} syncing={_syncing}>
       <AlertBanner />
 
+      {/* Account-scoped views are keyed on the account so switching remounts
+          them. Switching no longer reloads the page, and their component-local
+          state holds account-specific things — a pasted import payload, the
+          SL-undo banner, recently-triggered alerts, in-progress row edits —
+          which would otherwise carry over and be applied to the wrong account. */}
+      <Fragment key={accountId}>
       {tab === 'dashboard' && (
         <>
           <div className="flex justify-end mb-2">
@@ -124,6 +130,7 @@ export default function App() {
           {tab === 'settings' && <Settings />}
         </Suspense>
       )}
+      </Fragment>
 
       {showTradeForm && (
         <Suspense fallback={null}>
