@@ -29,11 +29,8 @@ export interface AccountInfo {
 }
 
 export const ACCOUNTS: AccountInfo[] = [
-  { id: 'main', label: '100k', startingBalance: 100000 },
-  { id: 'second', label: '25k A', startingBalance: 25000 },
-  { id: 'third', label: '25k B', startingBalance: 25000 },
-  { id: 'fourth', label: '25k C', startingBalance: 25000 },
-  { id: 'fifth', label: '25k D', startingBalance: 25000 },
+  { id: 'main', label: 'A', startingBalance: 100000 },
+  { id: 'second', label: 'B', startingBalance: 100000 },
 ];
 
 export const DEFAULT_ACCOUNT_ID = 'main';
