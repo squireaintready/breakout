@@ -1,7 +1,11 @@
 import WebSocket from 'ws';
 
+// Kraken WebSocket **v2** symbols. Not the REST AssetPairs `wsname` values —
+// that field is v1 naming (XBT/USD, XDG/USD), which v2 rejects with "Currency
+// pair not supported". Must stay in sync with src/utils/kraken.ts in the web
+// app; verify new entries by subscribing on wss://ws.kraken.com/v2.
 const KRAKEN_MAP: Record<string, string> = {
-  BTC: 'XBT/USD',
+  BTC: 'BTC/USD',
   ETH: 'ETH/USD',
   SOL: 'SOL/USD',
   XRP: 'XRP/USD',
@@ -9,7 +13,7 @@ const KRAKEN_MAP: Record<string, string> = {
   AVAX: 'AVAX/USD',
   DOT: 'DOT/USD',
   LINK: 'LINK/USD',
-  MATIC: 'MATIC/USD',
+  POL: 'POL/USD',
   DOGE: 'DOGE/USD',
   ATOM: 'ATOM/USD',
   UNI: 'UNI/USD',
@@ -23,7 +27,6 @@ const KRAKEN_MAP: Record<string, string> = {
   TIA: 'TIA/USD',
   INJ: 'INJ/USD',
   FET: 'FET/USD',
-  RNDR: 'RNDR/USD',
   ASTR: 'ASTR/USD',
   HYPE: 'HYPE/USD',
   TRUMP: 'TRUMP/USD',
@@ -48,7 +51,6 @@ const KRAKEN_MAP: Record<string, string> = {
   ENA: 'ENA/USD',
   ONDO: 'ONDO/USD',
   STX: 'STX/USD',
-  MKR: 'MKR/USD',
   RENDER: 'RENDER/USD',
   TRX: 'TRX/USD',
   TON: 'TON/USD',
@@ -69,10 +71,10 @@ const KRAKEN_MAP: Record<string, string> = {
   JTO: 'JTO/USD',
   STRK: 'STRK/USD',
   MEME: 'MEME/USD',
-  ORDI: 'ORDI/USD',
   RUNE: 'RUNE/USD',
   WLD: 'WLD/USD',
-  FTM: 'FTM/USD',
+  S: 'S/USD',
+  ZEC: 'ZEC/USD',
 };
 
 const reverseMap = new Map<string, string>();
