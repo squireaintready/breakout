@@ -59,7 +59,13 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
   const feePct = settings.tradingFeePct / 100;
 
   const positionRows = positions.map(pos => {
-    const currentPrice = prices[pos.asset] || pos.entryPrice;
+    // No feed means no tick has ever arrived for this asset (unlisted pair, or a
+    // ticker Kraken renamed). Falling back to the entry price keeps the maths
+    // finite, but it reports the position as exactly flat — so the row is
+    // flagged rather than quietly showing a fabricated 0.00%.
+    const live = prices[pos.asset];
+    const hasFeed = live != null;
+    const currentPrice = hasFeed ? live : pos.entryPrice;
     const dir = pos.side === 'long' ? 1 : -1;
     const pnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * pos.size * dir;
 
@@ -77,8 +83,10 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
       ? ((pos.takeProfit - currentPrice) / currentPrice) * 100 * dir
       : null;
 
-    return { pos, currentPrice, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP };
+    return { pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP };
   });
+
+  const stalePositions = positionRows.filter(r => !r.hasFeed).map(r => r.pos.asset);
 
   const totalUnrealizedPnl = positionRows.reduce((s, r) => s + r.pnl, 0);
   const totalExposure = positionRows.reduce((s, r) => s + r.pos.size, 0);
@@ -158,6 +166,13 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
         </div>
       )}
 
+      {stalePositions.length > 0 && (
+        <div className="mb-3 bg-amber-900/40 border border-amber-700 rounded-lg px-3 py-2 text-xs text-amber-200">
+          No live price for <b>{stalePositions.join(', ')}</b> — these rows show the entry
+          price, so their P&amp;L reads as flat and total equity is understated.
+        </div>
+      )}
+
       {/* Table */}
       <div>
         <table className="w-full text-xs">
@@ -183,7 +198,7 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
               if (sortBy === 'pnl') return b.pnl - a.pnl;
               if (sortBy === 'totp') return (a.distToTP ?? Infinity) - (b.distToTP ?? Infinity);
               return 0;
-            }).map(({ pos, currentPrice, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP }, i, sorted) => {
+            }).map(({ pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP }, i, sorted) => {
               const prevAsset = i > 0 ? sorted[i - 1].pos.asset : null;
               const isNewGroup = sortBy === 'symbol' && prevAsset !== null && prevAsset !== pos.asset;
               const dir = pos.side === 'long' ? 1 : -1;
@@ -233,13 +248,17 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                 </td>
 
                 <td className={`pt-2 pb-0 pr-1 text-right font-mono ${
-                  currentPrice > pos.entryPrice
-                    ? (pos.side === 'long' ? 'text-green-400' : 'text-red-400')
-                    : currentPrice < pos.entryPrice
-                      ? (pos.side === 'long' ? 'text-red-400' : 'text-green-400')
-                      : 'text-slate-300'
+                  !hasFeed
+                    ? 'text-amber-400'
+                    : currentPrice > pos.entryPrice
+                      ? (pos.side === 'long' ? 'text-green-400' : 'text-red-400')
+                      : currentPrice < pos.entryPrice
+                        ? (pos.side === 'long' ? 'text-red-400' : 'text-green-400')
+                        : 'text-slate-300'
                 }`}>
-                  {fmtPrice(currentPrice)}
+                  {hasFeed
+                    ? fmtPrice(currentPrice)
+                    : <span title={`No Kraken feed for ${pos.asset} — showing entry price`}>no feed</span>}
                 </td>
 
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-400">

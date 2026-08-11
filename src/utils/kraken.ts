@@ -1,5 +1,9 @@
+// Kraken WebSocket **v2** symbols. These are not the `wsname` values from the
+// REST AssetPairs endpoint — that field is the v1 naming (XBT/USD, XDG/USD),
+// which v2 rejects outright with "Currency pair not supported". Verify any new
+// entry by subscribing to it on wss://ws.kraken.com/v2, not against REST.
 const KRAKEN_MAP: Record<string, string> = {
-  BTC: 'XBT/USD',
+  BTC: 'BTC/USD',
   ETH: 'ETH/USD',
   SOL: 'SOL/USD',
   XRP: 'XRP/USD',
@@ -7,7 +11,7 @@ const KRAKEN_MAP: Record<string, string> = {
   AVAX: 'AVAX/USD',
   DOT: 'DOT/USD',
   LINK: 'LINK/USD',
-  MATIC: 'MATIC/USD',
+  POL: 'POL/USD',
   DOGE: 'DOGE/USD',
   ATOM: 'ATOM/USD',
   UNI: 'UNI/USD',
@@ -21,7 +25,6 @@ const KRAKEN_MAP: Record<string, string> = {
   TIA: 'TIA/USD',
   INJ: 'INJ/USD',
   FET: 'FET/USD',
-  RNDR: 'RNDR/USD',
   ASTR: 'ASTR/USD',
   HYPE: 'HYPE/USD',
   TRUMP: 'TRUMP/USD',
@@ -46,7 +49,6 @@ const KRAKEN_MAP: Record<string, string> = {
   ENA: 'ENA/USD',
   ONDO: 'ONDO/USD',
   STX: 'STX/USD',
-  MKR: 'MKR/USD',
   RENDER: 'RENDER/USD',
   TRX: 'TRX/USD',
   TON: 'TON/USD',
@@ -67,10 +69,10 @@ const KRAKEN_MAP: Record<string, string> = {
   JTO: 'JTO/USD',
   STRK: 'STRK/USD',
   MEME: 'MEME/USD',
-  ORDI: 'ORDI/USD',
   RUNE: 'RUNE/USD',
   WLD: 'WLD/USD',
-  FTM: 'FTM/USD',
+  S: 'S/USD',
+  ZEC: 'ZEC/USD',
 };
 
 export function toKrakenPair(asset: string): string {

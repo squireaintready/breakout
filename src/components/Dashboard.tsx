@@ -21,9 +21,12 @@ export default function Dashboard({ prices, onAddPosition }: Props) {
   const totalDD = calcTotalDrawdownPct(balance, highWaterMark);
   const riskAtStops = calcRiskIfAllStopsHit(positions, balance, settings.tradingFeePct);
 
-  // Unrealized P&L
+  // Unrealized P&L. A position with no feed contributes 0 here (see the same
+  // fallback in OpenPositions, which flags those rows and warns that this total
+  // is understated) — deliberately matching that component so the two agree.
   const unrealizedPnl = positions.reduce((sum, pos) => {
-    const currentPrice = prices[pos.asset] || pos.entryPrice;
+    const live = prices[pos.asset];
+    const currentPrice = live != null ? live : pos.entryPrice;
     const dir = pos.side === 'long' ? 1 : -1;
     return sum + ((currentPrice - pos.entryPrice) / pos.entryPrice) * pos.size * dir;
   }, 0);
