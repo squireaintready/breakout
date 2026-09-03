@@ -9,6 +9,17 @@ interface Props {
   onAddPosition?: () => void;
 }
 
+// Positions table text size, a per-device display preference. The table reads
+// the row and secondary-line font sizes from CSS variables so every cell
+// scales together.
+type TableSize = 's' | 'm' | 'l';
+const TABLE_SIZE_KEY = 'breakout-positions-size';
+const TABLE_SIZES: Record<TableSize, { fs: string; sub: string }> = {
+  s: { fs: '12px', sub: '10px' },
+  m: { fs: '14px', sub: '12px' },
+  l: { fs: '16px', sub: '14px' },
+};
+
 export default function OpenPositions({ prices, onAddPosition }: Props) {
   const { positions, balance, dayStartBalance, settings, trades, closePosition, deletePosition, updatePositionStop, updatePositionTP, addPriceAlert, reopenTrade } = useStore();
   const [closingId, setClosingId] = useState<string | null>(null);
@@ -22,6 +33,14 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
   const [alertDir, setAlertDir] = useState<'above' | 'below'>('above');
   const [slCloseBanner, setSlCloseBanner] = useState<{ asset: string; side: string } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [tableSize, setTableSize] = useState<TableSize>(() => {
+    const v = localStorage.getItem(TABLE_SIZE_KEY);
+    return v === 'm' || v === 'l' ? v : 's';
+  });
+  const changeTableSize = (k: TableSize) => {
+    setTableSize(k);
+    localStorage.setItem(TABLE_SIZE_KEY, k);
+  };
   const toggleGroup = (key: string) => setExpandedGroups(prev => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -209,8 +228,15 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
               title="Add position">+</button>
           )}
         </div>
-        <div className="flex items-center gap-1 text-xs">
-          <span className="text-slate-500">Sort:</span>
+        <div className="flex items-center justify-end flex-wrap gap-1 text-xs">
+          <span className="text-slate-500">Size:</span>
+          {(['s', 'm', 'l'] as const).map(k => (
+            <button key={k} onClick={() => changeTableSize(k)}
+              className={`px-1.5 py-0.5 rounded ${tableSize === k ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+              {k.toUpperCase()}
+            </button>
+          ))}
+          <span className="text-slate-500 ml-2">Sort:</span>
           {([['symbol', 'Symbol'], ['acct', '% Acct'], ['date', 'Date'], ['pnl', 'P&L'], ['totp', 'To TP']] as const).map(([key, label]) => (
             <button key={key} onClick={() => setSortBy(key)}
               className={`px-2 py-0.5 rounded ${sortBy === key ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
@@ -238,8 +264,9 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
       )}
 
       {/* Table */}
-      <div>
-        <table className="w-full text-xs">
+      <div className="overflow-x-auto"
+        style={{ '--pos-fs': TABLE_SIZES[tableSize].fs, '--pos-fs2': TABLE_SIZES[tableSize].sub } as React.CSSProperties}>
+        <table className="w-full text-[length:var(--pos-fs)]">
           <thead>
             <tr className="text-slate-400 text-left border-b border-slate-700">
               <th className="pb-2 pr-1 font-medium">Sym</th>
@@ -254,7 +281,6 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
               <th className="pb-2"></th>
             </tr>
           </thead>
-          <tbody>
             {sortedGroups.map((g, gi) => {
               const single = g.rows.length === 1;
               const open = single || expandedGroups.has(g.key);
@@ -269,12 +295,12 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
               return (
               <React.Fragment key={g.key}>
               {!single && (
-                <>
+                <tbody onClick={() => toggleGroup(g.key)} className="group cursor-pointer select-none">
                 {/* Group summary row 1: totals across fills */}
-                <tr onClick={() => toggleGroup(g.key)} className={`cursor-pointer hover:bg-slate-700/30 ${divider}`}>
+                <tr className={`group-hover:bg-slate-700/30 ${divider}`}>
                   <td className="pt-2 pb-0 pr-1 font-bold text-slate-200 whitespace-nowrap">
                     <span className="inline-block w-3 text-slate-500">{open ? '\u25BE' : '\u25B8'}</span>{g.asset}
-                    <span className="ml-1 text-[10px] font-normal text-slate-500">{g.rows.length}</span>
+                    <span className="ml-1 text-[length:var(--pos-fs2)] font-normal text-slate-500">{g.rows.length}</span>
                   </td>
                   <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">${g.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                   <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtQty(g.qty)}</td>
@@ -297,39 +323,39 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                   <td className="pt-2 pb-0" rowSpan={2}></td>
                 </tr>
                 {/* Group summary row 2 */}
-                <tr onClick={() => toggleGroup(g.key)} className={`cursor-pointer hover:bg-slate-700/30 ${open ? '' : 'border-b border-slate-700/50'}`}>
-                  <td className="pb-2 pt-0 pr-1 text-[10px] font-mono">
+                <tr className={`group-hover:bg-slate-700/30 ${open ? '' : 'border-b border-slate-700/50'}`}>
+                  <td className="pb-2 pt-0 pr-1 text-[length:var(--pos-fs2)] font-mono">
                     <span className={g.side === 'long' ? 'text-green-400' : 'text-red-400'}>{g.side === 'long' ? 'Buy' : 'Sell'}</span>
                   </td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">${g.margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{g.leverage != null ? `${g.leverage}x` : 'mixed'}</span></td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-600"></td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">{g.acctPct.toFixed(1)}%</td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-red-400">
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500">${g.margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{g.leverage != null ? `${g.leverage}x` : 'mixed'}</span></td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-600"></td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500">{g.acctPct.toFixed(1)}%</td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-red-400">
                     {g.slCount ? `-$${g.riskIfAllSL.toFixed(0)}` : ''}
                   </td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-green-400">
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-green-400">
                     {g.tpCount ? `+$${g.rewardIfAllTP.toFixed(0)}` : ''}
                   </td>
-                  <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono font-bold ${g.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className={`pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono font-bold ${g.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {g.pnl >= 0 ? '+' : '-'}${Math.abs(g.pnl).toFixed(0)}
                   </td>
-                  <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono ${g.fillPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className={`pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono ${g.fillPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {g.fillPct >= 0 ? '+' : ''}{g.fillPct.toFixed(2)}%
                   </td>
-                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                  <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500 whitespace-nowrap">
                     {fmtTimeOnly(g.openedAt)}
                   </td>
                 </tr>
-                </>
+                </tbody>
               )}
               {open && g.rows.map(({ pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, leverage, margin, acctPct, distToTP }) => {
               const dir = pos.side === 'long' ? 1 : -1;
               const fillPctRaw = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
               const fillPct = fillPctRaw * dir;
               return (
-              <React.Fragment key={pos.id}>
+              <tbody key={pos.id} className="group">
               {/* Row 1: Primary */}
-              <tr className={`hover:bg-slate-700/30 ${single ? divider : 'bg-slate-900/30'}`}>
+              <tr className={`group-hover:bg-slate-700/30 ${single ? divider : 'bg-slate-900/30'}`}>
                 <td className={`pt-2 pb-0 pr-1 font-bold truncate ${single ? 'text-slate-200' : 'pl-4 text-slate-400'}`}>{pos.asset}</td>
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
@@ -342,7 +368,7 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
+                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-[length:var(--pos-fs)] font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"
@@ -359,7 +385,7 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                       onChange={e => setEditValue(e.target.value)}
                       onBlur={commitEdit}
                       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingField(null); }}
-                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-xs font-mono text-center" />
+                      className="w-full bg-slate-700 rounded px-1 py-0.5 text-[length:var(--pos-fs)] font-mono text-center" />
                   ) : (
                     <span
                       className="cursor-pointer hover:text-blue-400 text-slate-300"
@@ -396,32 +422,32 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                     <div className="flex items-center gap-1 justify-center">
                       <input type="number" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
                         placeholder={`${currentPrice}`} autoFocus step={priceStep(exitPrice)}
-                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono"
+                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-[length:var(--pos-fs)] font-mono"
                         onKeyDown={e => {
                           if (e.key === 'Enter') handleClose(pos.id);
                           if (e.key === 'Escape') setClosingId(null);
                         }} />
                       <input type="text" value={closeNotes} onChange={e => setCloseNotes(e.target.value)}
                         placeholder="Notes"
-                        className="w-16 bg-slate-700 rounded px-1 py-0.5 text-xs"
+                        className="w-16 bg-slate-700 rounded px-1 py-0.5 text-[length:var(--pos-fs)]"
                         onKeyDown={e => {
                           if (e.key === 'Enter') handleClose(pos.id);
                           if (e.key === 'Escape') setClosingId(null);
                         }} />
                       <button onClick={() => handleClose(pos.id)}
-                        className="px-1.5 py-0.5 bg-red-600 text-white rounded text-xs">OK</button>
+                        className="px-1.5 py-0.5 bg-red-600 text-white rounded text-[length:var(--pos-fs)]">OK</button>
                       <button onClick={() => setClosingId(null)}
-                        className="text-slate-400 hover:text-slate-200 text-xs">X</button>
+                        className="text-slate-400 hover:text-slate-200 text-[length:var(--pos-fs)]">X</button>
                     </div>
                   ) : alertingId === pos.id ? (
                     <div className="flex items-center gap-1 justify-center">
                       <button onClick={() => setAlertDir(d => d === 'above' ? 'below' : 'above')}
-                        className={`px-1.5 py-0.5 rounded text-xs ${alertDir === 'above' ? 'bg-green-700 text-green-300' : 'bg-red-700 text-red-300'}`}>
+                        className={`px-1.5 py-0.5 rounded text-[length:var(--pos-fs)] ${alertDir === 'above' ? 'bg-green-700 text-green-300' : 'bg-red-700 text-red-300'}`}>
                         {alertDir === 'above' ? '↑' : '↓'}
                       </button>
                       <input type="number" value={alertPrice} onChange={e => setAlertPrice(e.target.value)}
                         placeholder={`${currentPrice}`} autoFocus step={priceStep(alertPrice)}
-                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-xs font-mono"
+                        className="w-20 bg-slate-700 rounded px-1 py-0.5 text-[length:var(--pos-fs)] font-mono"
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             const p = parseFloat(alertPrice);
@@ -432,58 +458,57 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                       <button onClick={() => {
                         const p = parseFloat(alertPrice);
                         if (p > 0) { addPriceAlert({ asset: pos.asset, targetPrice: p, direction: alertDir, note: '' }); setAlertingId(null); setAlertPrice(''); }
-                      }} className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-xs">OK</button>
+                      }} className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[length:var(--pos-fs)]">OK</button>
                       <button onClick={() => setAlertingId(null)}
-                        className="text-slate-400 hover:text-slate-200 text-xs">X</button>
+                        className="text-slate-400 hover:text-slate-200 text-[length:var(--pos-fs)]">X</button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 justify-center">
                       <button onClick={() => { setAlertingId(pos.id); setAlertPrice(String(currentPrice)); setAlertDir('below'); }}
-                        className="text-slate-500 hover:text-yellow-400 text-xs leading-none"
+                        className="text-slate-500 hover:text-yellow-400 text-[length:var(--pos-fs)] leading-none"
                         title="Quick alert">&#128276;</button>
                       <button onClick={() => { setClosingId(pos.id); setExitPrice(''); }}
-                        className="px-1.5 py-px bg-red-600/80 text-white rounded text-xs hover:bg-red-500">
+                        className="px-1.5 py-px bg-red-600/80 text-white rounded text-[length:var(--pos-fs)] hover:bg-red-500">
                         Close
                       </button>
                       <button onClick={() => { if (confirm('Delete this position? Entry fee will be refunded.')) deletePosition(pos.id); }}
-                        className="text-slate-500 hover:text-red-400 text-xs leading-none"
+                        className="text-slate-500 hover:text-red-400 text-[length:var(--pos-fs)] leading-none"
                         title="Delete position">&times;</button>
                     </div>
                   )}
                 </td>
               </tr>
               {/* Row 2: Secondary values per column */}
-              <tr className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${single ? '' : 'bg-slate-900/30'}`}>
-                <td className="pb-2 pt-0 pr-1 text-[10px] font-mono">
+              <tr className={`border-b border-slate-700/50 group-hover:bg-slate-700/30 ${single ? '' : 'bg-slate-900/30'}`}>
+                <td className="pb-2 pt-0 pr-1 text-[length:var(--pos-fs2)] font-mono">
                   <span className={pos.side === 'long' ? 'text-green-400' : 'text-red-400'}>{pos.side === 'long' ? 'Buy' : 'Sell'}</span>
                 </td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">${margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{leverage}x</span></td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-600"></td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">{acctPct.toFixed(1)}%</td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-red-400">
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500">${margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{leverage}x</span></td>
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-600"></td>
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500">{acctPct.toFixed(1)}%</td>
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-red-400">
                   {pos.stopLoss != null ? `-$${(riskAmt + pos.size * feePct).toFixed(0)}` : ''}
                 </td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-green-400">
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-green-400">
                   {pos.takeProfit != null ? `+$${(rewardAmt - pos.size * feePct).toFixed(0)}` : ''}
                 </td>
-                <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <td className={`pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(0)}
                 </td>
-                <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono ${fillPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <td className={`pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono ${fillPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {fillPct >= 0 ? '+' : ''}{fillPct.toFixed(2)}%
                 </td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                <td className="pb-2 pt-0 pr-1 text-right text-[length:var(--pos-fs2)] font-mono text-slate-500 whitespace-nowrap">
                   {fmtTimeOnly(pos.openedAt)}
                 </td>
                 {/* Actions cell is rowSpan=2 from row 1 */}
               </tr>
-              </React.Fragment>
+              </tbody>
             );
             })}
               </React.Fragment>
             );
             })}
-          </tbody>
         </table>
       </div>
 
