@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useStore } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
 import { priceStep } from '../utils/priceStep';
+import { defaultLeverage } from '../utils/constants';
 
 interface Props {
   prices: PriceMap;
@@ -20,6 +21,12 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
   const [alertPrice, setAlertPrice] = useState('');
   const [alertDir, setAlertDir] = useState<'above' | 'below'>('above');
   const [slCloseBanner, setSlCloseBanner] = useState<{ asset: string; side: string } | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) => setExpandedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   // Listen for auto-close events from SL trigger
   useEffect(() => {
@@ -70,7 +77,9 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
     const pnl = ((currentPrice - pos.entryPrice) / pos.entryPrice) * pos.size * dir;
 
     const sizeQty = pos.size / pos.entryPrice;
-    const acctPct = balance > 0 ? (pos.size / balance / 2) * 100 : 0;
+    const leverage = pos.leverage ?? defaultLeverage(pos.asset, settings);
+    const margin = pos.size / leverage;
+    const acctPct = balance > 0 ? (margin / balance) * 100 : 0;
 
     const riskAmt = pos.stopLoss
       ? (Math.abs(pos.entryPrice - pos.stopLoss) / pos.entryPrice) * pos.size
@@ -83,17 +92,72 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
       ? ((pos.takeProfit - currentPrice) / currentPrice) * 100 * dir
       : null;
 
-    return { pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP };
+    return { pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, leverage, margin, acctPct, distToTP };
   });
 
   const stalePositions = positionRows.filter(r => !r.hasFeed).map(r => r.pos.asset);
 
   const totalUnrealizedPnl = positionRows.reduce((s, r) => s + r.pnl, 0);
   const totalExposure = positionRows.reduce((s, r) => s + r.pos.size, 0);
+  const totalMargin = positionRows.reduce((s, r) => s + r.margin, 0);
   const totalPnlIfAllSLHit = positionRows.reduce(
     (s, r) => s + (r.pos.stopLoss ? -r.riskAmt - r.pos.size * feePct : 0), 0);
   const totalPnlIfAllTPHit = positionRows.reduce(
     (s, r) => s + (r.pos.takeProfit ? r.rewardAmt - r.pos.size * feePct : 0), 0);
+
+  // Fills of the same market and side roll up into one row, like the broker's
+  // grouped view: totals, size-weighted average entry, and combined P&L. Click
+  // the row to expand the individual fills.
+  type Row = (typeof positionRows)[number];
+  const byKey = new Map<string, Row[]>();
+  for (const r of positionRows) {
+    const key = `${r.pos.asset}:${r.pos.side}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), r]);
+  }
+  const groups = [...byKey.entries()].map(([key, rows]) => {
+    const { pos, hasFeed } = rows[0];
+    const size = rows.reduce((s, r) => s + r.pos.size, 0);
+    const qty = rows.reduce((s, r) => s + r.sizeQty, 0);
+    const avgEntry = size / qty;
+    // Same no-feed fallback as the rows: report the group as flat, not as the
+    // first fill's drift from the average.
+    const currentPrice = hasFeed ? rows[0].currentPrice : avgEntry;
+    const dir = pos.side === 'long' ? 1 : -1;
+    const withSL = rows.filter(r => r.pos.stopLoss != null);
+    const withTP = rows.filter(r => r.pos.takeProfit != null);
+    const withDist = rows.filter(r => r.distToTP != null);
+    const distSize = withDist.reduce((s, r) => s + r.pos.size, 0);
+    const leverages = new Set(rows.map(r => r.leverage));
+    return {
+      key, rows, asset: pos.asset, side: pos.side, size, qty, avgEntry, currentPrice, hasFeed,
+      margin: rows.reduce((s, r) => s + r.margin, 0),
+      leverage: leverages.size === 1 ? rows[0].leverage : null,
+      acctPct: rows.reduce((s, r) => s + r.acctPct, 0),
+      pnl: rows.reduce((s, r) => s + r.pnl, 0),
+      fillPct: ((currentPrice - avgEntry) / avgEntry) * 100 * dir,
+      slCount: withSL.length,
+      tpCount: withTP.length,
+      riskIfAllSL: withSL.reduce((s, r) => s + r.riskAmt + r.pos.size * feePct, 0),
+      rewardIfAllTP: withTP.reduce((s, r) => s + r.rewardAmt - r.pos.size * feePct, 0),
+      distToTP: distSize > 0 ? withDist.reduce((s, r) => s + r.distToTP! * r.pos.size, 0) / distSize : null,
+      openedAt: Math.min(...rows.map(r => r.pos.openedAt)),
+    };
+  });
+
+  type SortFields = { asset: string; acctPct: number; openedAt: number; pnl: number; distToTP: number | null };
+  const compare = (a: SortFields, b: SortFields) => {
+    if (sortBy === 'symbol') return a.asset.localeCompare(b.asset);
+    if (sortBy === 'acct') return b.acctPct - a.acctPct;
+    if (sortBy === 'date') return b.openedAt - a.openedAt;
+    if (sortBy === 'pnl') return b.pnl - a.pnl;
+    if (sortBy === 'totp') return (a.distToTP ?? Infinity) - (b.distToTP ?? Infinity);
+    return 0;
+  };
+  const rowFields = (r: Row): SortFields => ({ asset: r.pos.asset, acctPct: r.acctPct, openedAt: r.pos.openedAt, pnl: r.pnl, distToTP: r.distToTP });
+  const sortedGroups = [...groups].sort(compare).map(g => ({
+    ...g,
+    rows: [...g.rows].sort((a, b) => compare(rowFields(a), rowFields(b))),
+  }));
 
   const handleClose = (id: string) => {
     const pos = positions.find(p => p.id === id);
@@ -191,24 +255,82 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
             </tr>
           </thead>
           <tbody>
-            {[...positionRows].sort((a, b) => {
-              if (sortBy === 'symbol') return a.pos.asset.localeCompare(b.pos.asset);
-              if (sortBy === 'acct') return b.acctPct - a.acctPct;
-              if (sortBy === 'date') return b.pos.openedAt - a.pos.openedAt;
-              if (sortBy === 'pnl') return b.pnl - a.pnl;
-              if (sortBy === 'totp') return (a.distToTP ?? Infinity) - (b.distToTP ?? Infinity);
-              return 0;
-            }).map(({ pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, acctPct, distToTP }, i, sorted) => {
-              const prevAsset = i > 0 ? sorted[i - 1].pos.asset : null;
-              const isNewGroup = sortBy === 'symbol' && prevAsset !== null && prevAsset !== pos.asset;
+            {sortedGroups.map((g, gi) => {
+              const single = g.rows.length === 1;
+              const open = single || expandedGroups.has(g.key);
+              const divider = sortBy === 'symbol' && gi > 0 ? 'border-t border-slate-600' : '';
+              const priceColor = !g.hasFeed
+                ? 'text-amber-400'
+                : g.currentPrice > g.avgEntry
+                  ? (g.side === 'long' ? 'text-green-400' : 'text-red-400')
+                  : g.currentPrice < g.avgEntry
+                    ? (g.side === 'long' ? 'text-red-400' : 'text-green-400')
+                    : 'text-slate-300';
+              return (
+              <React.Fragment key={g.key}>
+              {!single && (
+                <>
+                {/* Group summary row 1: totals across fills */}
+                <tr onClick={() => toggleGroup(g.key)} className={`cursor-pointer hover:bg-slate-700/30 ${divider}`}>
+                  <td className="pt-2 pb-0 pr-1 font-bold text-slate-200 whitespace-nowrap">
+                    <span className="inline-block w-3 text-slate-500">{open ? '\u25BE' : '\u25B8'}</span>{g.asset}
+                    <span className="ml-1 text-[10px] font-normal text-slate-500">{g.rows.length}</span>
+                  </td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">${g.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtQty(g.qty)}</td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtPrice(g.avgEntry)}</td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-400">
+                    {g.slCount ? `${g.slCount}/${g.rows.length}` : <span className="text-slate-600">&mdash;</span>}
+                  </td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-400">
+                    {g.tpCount ? `${g.tpCount}/${g.rows.length}` : <span className="text-slate-600">&mdash;</span>}
+                  </td>
+                  <td className={`pt-2 pb-0 pr-1 text-right font-mono ${priceColor}`}>
+                    {g.hasFeed ? fmtPrice(g.currentPrice) : 'no feed'}
+                  </td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-400">
+                    {g.distToTP != null ? `${g.distToTP.toFixed(2)}%` : <span className="text-slate-600">&mdash;</span>}
+                  </td>
+                  <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-400 whitespace-nowrap">
+                    {fmtDateOnly(g.openedAt)}
+                  </td>
+                  <td className="pt-2 pb-0" rowSpan={2}></td>
+                </tr>
+                {/* Group summary row 2 */}
+                <tr onClick={() => toggleGroup(g.key)} className={`cursor-pointer hover:bg-slate-700/30 ${open ? '' : 'border-b border-slate-700/50'}`}>
+                  <td className="pb-2 pt-0 pr-1 text-[10px] font-mono">
+                    <span className={g.side === 'long' ? 'text-green-400' : 'text-red-400'}>{g.side === 'long' ? 'Buy' : 'Sell'}</span>
+                  </td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">${g.margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{g.leverage != null ? `${g.leverage}x` : 'mixed'}</span></td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-600"></td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">{g.acctPct.toFixed(1)}%</td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-red-400">
+                    {g.slCount ? `-$${g.riskIfAllSL.toFixed(0)}` : ''}
+                  </td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-green-400">
+                    {g.tpCount ? `+$${g.rewardIfAllTP.toFixed(0)}` : ''}
+                  </td>
+                  <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono font-bold ${g.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {g.pnl >= 0 ? '+' : '-'}${Math.abs(g.pnl).toFixed(0)}
+                  </td>
+                  <td className={`pb-2 pt-0 pr-1 text-right text-[10px] font-mono ${g.fillPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {g.fillPct >= 0 ? '+' : ''}{g.fillPct.toFixed(2)}%
+                  </td>
+                  <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500 whitespace-nowrap">
+                    {fmtTimeOnly(g.openedAt)}
+                  </td>
+                </tr>
+                </>
+              )}
+              {open && g.rows.map(({ pos, currentPrice, hasFeed, pnl, riskAmt, rewardAmt, sizeQty, leverage, margin, acctPct, distToTP }) => {
               const dir = pos.side === 'long' ? 1 : -1;
               const fillPctRaw = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
               const fillPct = fillPctRaw * dir;
               return (
               <React.Fragment key={pos.id}>
               {/* Row 1: Primary */}
-              <tr className={`hover:bg-slate-700/30 ${isNewGroup ? 'border-t border-slate-600' : ''}`}>
-                <td className="pt-2 pb-0 pr-1 font-bold text-slate-200 truncate">{pos.asset}</td>
+              <tr className={`hover:bg-slate-700/30 ${single ? divider : 'bg-slate-900/30'}`}>
+                <td className={`pt-2 pb-0 pr-1 font-bold truncate ${single ? 'text-slate-200' : 'pl-4 text-slate-400'}`}>{pos.asset}</td>
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">${pos.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtQty(sizeQty)}</td>
                 <td className="pt-2 pb-0 pr-1 text-right font-mono text-slate-300">{fmtPrice(pos.entryPrice)}</td>
@@ -331,11 +453,11 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
                 </td>
               </tr>
               {/* Row 2: Secondary values per column */}
-              <tr className="border-b border-slate-700/50 hover:bg-slate-700/30">
+              <tr className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${single ? '' : 'bg-slate-900/30'}`}>
                 <td className="pb-2 pt-0 pr-1 text-[10px] font-mono">
                   <span className={pos.side === 'long' ? 'text-green-400' : 'text-red-400'}>{pos.side === 'long' ? 'Buy' : 'Sell'}</span>
                 </td>
-                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">${(pos.size / 2).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">${margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-slate-600">{leverage}x</span></td>
                 <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-600"></td>
                 <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-slate-500">{acctPct.toFixed(1)}%</td>
                 <td className="pb-2 pt-0 pr-1 text-right text-[10px] font-mono text-red-400">
@@ -358,6 +480,9 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
               </React.Fragment>
             );
             })}
+              </React.Fragment>
+            );
+            })}
           </tbody>
         </table>
       </div>
@@ -367,8 +492,8 @@ export default function OpenPositions({ prices, onAddPosition }: Props) {
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-slate-800/80 rounded-lg px-3 py-2">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Margin Used</div>
-            <div className="font-mono text-lg font-bold text-slate-100">${(totalExposure / 2).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            <div className="text-[10px] font-mono text-slate-500">{balance > 0 ? ((totalExposure / 2 / balance) * 100).toFixed(1) : '0'}% of balance</div>
+            <div className="font-mono text-lg font-bold text-slate-100">${totalMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+            <div className="text-[10px] font-mono text-slate-500">{balance > 0 ? ((totalMargin / balance) * 100).toFixed(1) : '0'}% of balance</div>
           </div>
           <div className="bg-slate-800/80 rounded-lg px-3 py-2">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Exposure</div>

@@ -13,6 +13,13 @@ export const DEFAULT_SETTINGS = {
 
 export const BTC_ETH_ASSETS = ['BTC', 'ETH'];
 
+// Leverage assumed for a position that doesn't record its own. Broker fills
+// vary (2x/5x alts, 10x BTC), so positions carry `leverage` when known and
+// only fall back to these settings otherwise.
+export function defaultLeverage(asset: string, s: { btcEthLeverage: number; altLeverage: number }): number {
+  return BTC_ETH_ASSETS.includes(asset) ? s.btcEthLeverage : s.altLeverage;
+}
+
 // Multiple independent datasets ("accounts") in one deployment. Each account is
 // its own isolated state (own localStorage + own cloud key), gated by the same
 // shared password. The default account keeps the legacy un-suffixed storage keys

@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import type { PriceMap } from '../hooks/useKrakenPrices';
 import AssetPicker from './AssetPicker';
 import { priceStep } from '../utils/priceStep';
+import { defaultLeverage } from '../utils/constants';
 
 interface Props {
   prices: PriceMap;
@@ -10,23 +11,25 @@ interface Props {
 }
 
 export default function TradeForm({ prices, onClose }: Props) {
-  const { addPosition } = useStore();
+  const { addPosition, settings } = useStore();
   const [asset, setAsset] = useState('BTC');
   const [side, setSide] = useState<'long' | 'short'>('long');
   const [entryPrice, setEntryPrice] = useState('');
   const [qty, setQty] = useState('');
   const [stopLoss, setStopLoss] = useState('');
   const [takeProfit, setTakeProfit] = useState('');
+  const [leverage, setLeverage] = useState('');
 
   const price = parseFloat(entryPrice) || prices[asset] || 0;
   const quantity = parseFloat(qty) || 0;
   const notional = price * quantity;
+  const lev = parseFloat(leverage) || defaultLeverage(asset, settings);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (price <= 0 || quantity <= 0) return;
     addPosition({
-      asset, side, entryPrice: price, size: notional,
+      asset, side, entryPrice: price, size: notional, leverage: lev,
       stopLoss: stopLoss ? parseFloat(stopLoss) : null,
       takeProfit: takeProfit ? parseFloat(takeProfit) : null,
     });
@@ -80,10 +83,18 @@ export default function TradeForm({ prices, onClose }: Props) {
               step={priceStep(takeProfit)}
               className="w-full bg-slate-700 rounded px-2 py-1.5 text-sm font-mono" />
           </div>
+          <div>
+            <label className="text-xs text-slate-400">Leverage</label>
+            <input type="number" value={leverage} onChange={e => setLeverage(e.target.value)}
+              placeholder={`${defaultLeverage(asset, settings)}`}
+              step="any" min="1"
+              className="w-full bg-slate-700 rounded px-2 py-1.5 text-sm font-mono" />
+          </div>
         </div>
         {notional > 0 && (
           <div className="text-xs text-slate-400">
             Notional: <span className="font-mono text-slate-300">${notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            {' · '}Margin: <span className="font-mono text-slate-300">${(notional / lev).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> ({lev}x)
           </div>
         )}
         <div className="flex gap-2">

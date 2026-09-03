@@ -10,6 +10,7 @@ export interface Position {
   side: 'long' | 'short';
   entryPrice: number;
   size: number; // notional value in USD
+  leverage?: number; // broker leverage for this fill; see defaultLeverage()
   stopLoss: number | null;
   takeProfit: number | null;
   openedAt: number;
@@ -22,6 +23,7 @@ export interface Trade {
   entryPrice: number;
   exitPrice: number;
   size: number;
+  leverage?: number;
   pnl: number;
   fees: number;
   notes: string;
@@ -247,6 +249,7 @@ export const useStore = create<StoreState>()(
           entryPrice: pos.entryPrice,
           exitPrice,
           size: pos.size,
+          leverage: pos.leverage,
           pnl: pnl - exitFee,
           fees: totalFees,
           notes,
@@ -487,6 +490,7 @@ export const useStore = create<StoreState>()(
           side: trade.side,
           entryPrice: trade.entryPrice,
           size: trade.size,
+          leverage: trade.leverage,
           stopLoss: null,
           takeProfit: null,
           openedAt: trade.openedAt,
