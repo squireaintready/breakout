@@ -4,13 +4,18 @@ import type { Position } from '../store/useStore';
 import type { PriceMap } from './useKrakenPrices';
 import { getAccount } from '../utils/account';
 
-function playAlertSound() {
+type Tone = 'up' | 'down';
+
+// Rising arpeggio for anything crossing upward (above-alerts, take-profit),
+// falling for anything crossing downward (below-alerts, stop-loss), so the
+// direction is audible without looking.
+function playAlertSound(tone: Tone) {
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
-    // Two-tone beep
-    [520, 680].forEach((freq, i) => {
+    const notes = tone === 'up' ? [523, 659, 784] : [784, 659, 523];
+    notes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -57,8 +62,8 @@ function fmtTs(ts?: number) {
   return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
 }
 
-function notify(title: string, body: string, positionInfo: string = '', meta: { createdAt?: number } = {}) {
-  playAlertSound();
+function notify(tone: Tone, title: string, body: string, positionInfo: string = '', meta: { createdAt?: number } = {}) {
+  playAlertSound(tone);
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, { body, icon: '/favicon.svg' });
   }
@@ -122,6 +127,7 @@ export function usePriceAlerts(prices: PriceMap) {
         armedRef.current.delete(alert.id);
       }
       notify(
+        alert.direction === 'above' ? 'up' : 'down',
         `${alert.asset} ${alert.direction === 'above' ? '↑' : '↓'} ${alert.targetPrice}`,
         `${alert.asset} hit ${price.toLocaleString()}${alert.note ? ' — ' + alert.note : ''}`,
         formatPositions(alert.asset, positions, prices),
@@ -145,6 +151,7 @@ export function usePriceAlerts(prices: PriceMap) {
             firedRef.current.add(slKey);
             cooldownRef.current.set(slKey, Date.now());
             notify(
+              'down',
               `STOP LOSS — ${pos.asset}`,
               `${pos.asset} ${pos.side.toUpperCase()} hit SL at ${price.toLocaleString()} (SL: ${pos.stopLoss})`,
               formatPositions(pos.asset, positions, prices)
@@ -167,6 +174,7 @@ export function usePriceAlerts(prices: PriceMap) {
             firedRef.current.add(tpKey);
             cooldownRef.current.set(tpKey, Date.now());
             notify(
+              'up',
               `TAKE PROFIT — ${pos.asset}`,
               `${pos.asset} ${pos.side.toUpperCase()} hit TP at ${price.toLocaleString()} (TP: ${pos.takeProfit})`,
               formatPositions(pos.asset, positions, prices)
@@ -209,6 +217,7 @@ export function usePriceAlerts(prices: PriceMap) {
           }
           const dir = alert.direction === 'above' ? '↑' : '↓';
           notify(
+            alert.direction === 'above' ? 'up' : 'down',
             `P&L ${dir} $${alert.targetPnl}`,
             `Unrealized P&L hit $${totalPnl.toFixed(2)}${alert.note ? ' — ' + alert.note : ''}`,
             '',

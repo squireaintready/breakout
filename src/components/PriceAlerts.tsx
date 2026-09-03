@@ -15,7 +15,9 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
     pnlAlerts, addPnlAlert, deletePnlAlert, editPnlAlert, dismissPnlAlert, rearmPnlAlert } = useStore();
   const [asset, setAsset] = useState('BTC');
   const [targetPrice, setTargetPrice] = useState('');
-  const [direction, setDirection] = useState<'above' | 'below'>('above');
+  // 'both' adds an above and a below alert at the same level: one fires on the
+  // way up, the other on the way down.
+  const [direction, setDirection] = useState<'above' | 'below' | 'both'>('above');
   const [note, setNote] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   // P&L alert state
   const [showPnlForm, setShowPnlForm] = useState(false);
   const [pnlTarget, setPnlTarget] = useState('');
-  const [pnlDir, setPnlDir] = useState<'above' | 'below'>('above');
+  const [pnlDir, setPnlDir] = useState<'above' | 'below' | 'both'>('above');
   const [pnlNote, setPnlNote] = useState('');
   const [editingPnlId, setEditingPnlId] = useState<string | null>(null);
   const [editPnlTarget, setEditPnlTarget] = useState('');
@@ -71,7 +73,8 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const handleAddPnl = () => {
     const val = parseFloat(pnlTarget);
     if (isNaN(val)) return;
-    addPnlAlert({ targetPnl: val, direction: pnlDir, note: pnlNote, persistent: pnlPersistent });
+    const dirs = pnlDir === 'both' ? (['above', 'below'] as const) : [pnlDir];
+    for (const d of dirs) addPnlAlert({ targetPnl: val, direction: d, note: pnlNote, persistent: pnlPersistent });
     setPnlTarget('');
     setPnlNote('');
     setPnlPersistent(false);
@@ -96,7 +99,8 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
   const handleAdd = () => {
     const price = parseFloat(targetPrice);
     if (!asset || !price || price <= 0) return;
-    addPriceAlert({ asset, targetPrice: price, direction, note, persistent });
+    const dirs = direction === 'both' ? (['above', 'below'] as const) : [direction];
+    for (const d of dirs) addPriceAlert({ asset, targetPrice: price, direction: d, note, persistent });
     setTargetPrice('');
     setNote('');
     setPersistent(false);
@@ -167,8 +171,13 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                   Above
                 </button>
                 <button onClick={() => setDirection('below')}
-                  className={`px-3 py-1.5 text-xs rounded-r ${direction === 'below' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                  className={`px-3 py-1.5 text-xs ${direction === 'below' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
                   Below
+                </button>
+                <button onClick={() => setDirection('both')}
+                  className={`px-3 py-1.5 text-xs rounded-r ${direction === 'both' ? 'bg-sky-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                  title="Adds an above and a below alert at this level">
+                  Both
                 </button>
               </div>
             </div>
@@ -376,8 +385,13 @@ export default function PriceAlerts({ prices, unrealizedPnl = 0 }: Props) {
                     Above
                   </button>
                   <button onClick={() => setPnlDir('below')}
-                    className={`px-3 py-1.5 text-xs rounded-r ${pnlDir === 'below' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                    className={`px-3 py-1.5 text-xs ${pnlDir === 'below' ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
                     Below
+                  </button>
+                  <button onClick={() => setPnlDir('both')}
+                    className={`px-3 py-1.5 text-xs rounded-r ${pnlDir === 'both' ? 'bg-sky-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+                    title="Adds an above and a below alert at this level">
+                    Both
                   </button>
                 </div>
               </div>
