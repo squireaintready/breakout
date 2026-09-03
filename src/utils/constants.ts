@@ -38,6 +38,8 @@ export interface AccountInfo {
 export const ACCOUNTS: AccountInfo[] = [
   { id: 'main', label: 'A', startingBalance: 100000 },
   { id: 'second', label: 'B', startingBalance: 100000 },
+  // Personal perps account (not a breakout account); same rules, own dataset.
+  { id: 'personal', label: 'Personal', startingBalance: 10000 },
 ];
 
 export const DEFAULT_ACCOUNT_ID = 'main';
